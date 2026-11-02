@@ -222,11 +222,13 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "PumpkinDoorESP_Gui"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
+pcall(function() gui.ScreenInsets = Enum.ScreenInsets.None end)
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 150, 0, 120)
-frame.Position = UDim2.new(0.15, 60, 0.38, 0)
+frame.AnchorPoint = Vector2.new(0, 0.5)
+frame.Position = UDim2.new(0.0475, 40, 0.305, 0)
 frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -249,7 +251,8 @@ title.Parent = frame
 -- Tombol buka/tutup menu (tetap di kiri)
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-toggleBtn.Position = UDim2.new(0.15, 0, 0.38, 0)
+toggleBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+toggleBtn.Position = UDim2.new(0.0475, 0, 0.305, 0)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 toggleBtn.Text = "≡"
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
