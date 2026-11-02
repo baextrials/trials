@@ -9,21 +9,22 @@ local env = (getgenv and getgenv()) or _G
 if env.__PUMPKIN_ADAPT_CLEANUP then pcall(env.__PUMPKIN_ADAPT_CLEANUP) end
 
 -- ===== SETTING =====
-local START_HOP = 8            -- panjang loncatan awal (studs)
-local MIN_HOP = 3              -- loncatan terpendek sebelum pindah ke jalan asli
-local MAX_HOP = 25             -- loncatan terpanjang yang boleh dicoba
-local HOP_INTERVAL = 0.12      -- jeda antar loncatan
-local CHECK_DELAY = 0.3        -- tunggu sekian detik lalu cek apakah ditarik balik
-local RUBBER_TOL = 3           -- selisih posisi (studs) yang dianggap ditarik balik
-local WALK_FALLBACK_TIME = 8   -- lama jalan asli sebelum mencoba loncat lagi
-local TRAVEL_TIME = 12         -- maks detik menuju satu labu
-local COLLECT_TIME = 2.5       -- maks detik berjalan di dekat labu
-local SKIP_TIME = 4            -- detik labu gagal diabaikan
-local PLAYER_AVOID = 5         -- labu sedekat ini dari pemain lain dilewati dulu
-local WALK_SPEED = nil         -- contoh: 20 (nil = tidak diubah)
-local MONSTER_NAMES = {}       -- isi nama monster, contoh: {"Boogie", "Monster1"}
-local MONSTER_SAFE_DIST = 45   -- labu dekat monster dilewati
-local FLEE_DIST = 35           -- monster sedekat ini = kabur ke posisi aman
+local START_HOP = 20
+local MIN_HOP = 10
+local MAX_HOP = 40
+local HOP_INTERVAL = 0.08
+local CHECK_DELAY = 0.2
+local RUBBER_TOL = 4
+local WALL_CLEARANCE = 2.5     -- jarak aman dari tembok (studs)
+local WALK_FALLBACK_TIME = 8
+local TRAVEL_TIME = 12
+local COLLECT_TIME = 2.5
+local SKIP_TIME = 4
+local PLAYER_AVOID = 5
+local WALK_SPEED = nil
+local MONSTER_NAMES = {}       -- diisi nanti kalau sudah tahu namanya
+local MONSTER_SAFE_DIST = 60
+local FLEE_DIST = 50
 
 local running, isOn = true, false
 local hopDist, rubberCount = START_HOP, 0
@@ -230,6 +231,21 @@ local function getRayParams()
     return rayParams
 end
 
+-- Cek tembok di 3 tinggi (kaki, badan, kepala); ambil jarak terdekat
+local WALL_OFFSETS = { Vector3.new(0, -2, 0), Vector3.new(0, 0, 0), Vector3.new(0, 2, 0) }
+local function clearDistance(origin, dir, maxDist)
+    local params = getRayParams()
+    local best = maxDist
+    for _, off in ipairs(WALL_OFFSETS) do
+        local hit = Workspace:Raycast(origin + off, dir * (maxDist + WALL_CLEARANCE), params)
+        if hit then
+            local d = hit.Distance - WALL_CLEARANCE
+            if d < best then best = d end
+        end
+    end
+    return math.max(0, best)
+end
+
 local function computePath(from, to)
     local path = PathfindingService:CreatePath({
         AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, WaypointSpacing = 6,
@@ -246,8 +262,6 @@ local function computePath(from, to)
 end
 
 -- ===== Gerak adaptif =====
--- Loncat pendek lewat waypoint; kalau ditarik balik server, loncatan dipendekkan,
--- dan kalau tetap ditolak, pindah ke jalan asli.
 local function travel(target, stopDist, maxTime, abortFn)
     local t0 = os.clock()
     local wps, lastCompute = nil, 0
@@ -271,7 +285,7 @@ local function travel(target, stopDist, maxTime, abortFn)
 
         if mode == "walk" and now > walkUntil then
             mode = "hop"
-            hopDist = MIN_HOP * 1.5
+            hopDist = MIN_HOP * 2
             rubberCount = 0
         end
 
@@ -279,14 +293,14 @@ local function travel(target, stopDist, maxTime, abortFn)
             local stand = nextp + Vector3.new(0, legLift(), 0)
             local delta = stand - root.Position
             local total = delta.Magnitude
+            local dir = delta.Unit
             local step = math.min(hopDist, total)
 
-            -- jangan menembus dinding: pendekkan kalau ada penghalang
-            local hit = Workspace:Raycast(root.Position, delta.Unit * step, getRayParams())
-            if hit then step = math.max(0, hit.Distance - 1.5) end
+            -- jangan menembus dinding
+            step = clearDistance(root.Position, dir, step)
 
             if step > 0.3 then
-                local newPos = root.Position + delta.Unit * step
+                local newPos = root.Position + dir * step
                 local flat = Vector3.new(delta.X, 0, delta.Z)
                 local look = flat.Magnitude > 0.1 and (newPos + flat) or (newPos + root.CFrame.LookVector)
                 root.CFrame = CFrame.lookAt(newPos, Vector3.new(look.X, newPos.Y, look.Z))
@@ -297,10 +311,9 @@ local function travel(target, stopDist, maxTime, abortFn)
                 local r2 = getRoot()
                 if not r2 then return false end
                 if (r2.Position - newPos).Magnitude > RUBBER_TOL then
-                    -- ditarik balik server
                     rubberCount += 1
-                    hopDist = math.max(MIN_HOP, hopDist * 0.6)
-                    if hopDist <= MIN_HOP and rubberCount >= 3 then
+                    hopDist = math.max(MIN_HOP, hopDist * 0.8)
+                    if hopDist <= MIN_HOP and rubberCount >= 5 then
                         mode = "walk"
                         walkUntil = os.clock() + WALK_FALLBACK_TIME
                     end
@@ -311,9 +324,10 @@ local function travel(target, stopDist, maxTime, abortFn)
                 setStatus("Menuju labu")
                 task.wait(HOP_INTERVAL)
             else
-                -- terhalang: pakai jalan asli sebentar
+                -- terhalang: jalan asli sebentar
                 hum:MoveTo(nextp)
                 hum.Jump = true
+                wps = nil
                 task.wait(0.2)
             end
         else
@@ -322,7 +336,7 @@ local function travel(target, stopDist, maxTime, abortFn)
             if not lastPos or now - lastMoveT > 0.6 then
                 if lastPos and (root.Position - lastPos).Magnitude < 0.3 then
                     hum.Jump = true
-                    wps = nil -- hitung ulang jalur
+                    wps = nil
                 end
                 lastPos, lastMoveT = root.Position, now
             end
@@ -332,7 +346,6 @@ local function travel(target, stopDist, maxTime, abortFn)
     return false
 end
 
--- Berjalan asli di sekitar labu sampai labunya hilang
 local function collectPhase(obj, part)
     local t0, k, lastK, lastTrig = os.clock(), 0, os.clock(), 0
     while running and isOn and os.clock() - t0 < COLLECT_TIME do
@@ -366,7 +379,6 @@ task.spawn(function()
         if WALK_SPEED and hum.WalkSpeed ~= WALK_SPEED then hum.WalkSpeed = WALK_SPEED end
         refreshMonsters()
 
-        -- Kabur kalau monster mendekat
         if safePos and monsterWithin(root.Position, FLEE_DIST) then
             setStatus("Monster dekat, kabur")
             travel(safePos, 4, 10, nil)
@@ -404,7 +416,6 @@ task.spawn(function()
     end
 end)
 
--- Tombol: satu-satunya yang bisa ON/OFF
 connect(toggleBtn.MouseButton1Click, function()
     isOn = not isOn
     local root, hum = getRoot(), getHumanoid()
@@ -424,7 +435,6 @@ connect(toggleBtn.MouseButton1Click, function()
     end
 end)
 
--- Cleanup
 env.__PUMPKIN_ADAPT_CLEANUP = function()
     running, isOn = false, false
     local root = getRoot()
