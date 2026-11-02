@@ -1,78 +1,65 @@
+print("[v2] chunk dimuat")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local PathfindingService = game:GetService("PathfindingService")
 local LP = Players.LocalPlayer
-
--- Anti double execution
 local env = (getgenv and getgenv()) or _G
 if env.__PUMPKIN_ADAPT_CLEANUP then pcall(env.__PUMPKIN_ADAPT_CLEANUP) end
-
--- ===== SETTING =====
-local WALK_SPEED = 32          -- turunkan (28/24/20) kalau masih ditarik balik
-local REACH_DIST = 2.5         -- jarak dianggap sampai di waypoint
-local REPATH_TIME = 1.0        -- hitung ulang jalur tiap sekian detik
-local STUCK_TIME = 0.5         -- cek macet tiap sekian detik
-local STUCK_DIST = 1.0         -- bergerak kurang dari ini = macet
-local AGENT_RADIUS = 4         -- makin besar makin menjauh dari tembok
-local RAY_LEN = 8              -- panjang sinar deteksi tembok (studs)
-local SIDE_ANGLE = 40          -- sudut sinar kiri/kanan (derajat)
-local STEER_DIST = 10          -- seberapa jauh titik belok saat menghindar
-local STEER_HOLD = 0.5         -- tahan arah belok sekian detik (anti goyang)
-local TRAVEL_TIME = 12         -- maks detik menuju satu labu
-local COLLECT_TIME = 2.5       -- maks detik berjalan di dekat labu
-local SKIP_TIME = 4            -- detik labu gagal diabaikan
-local PLAYER_AVOID = 5         -- labu sedekat ini dari pemain lain dilewati dulu
-local MONSTER_NAMES = {}       -- diisi nanti kalau sudah tahu namanya
-local MONSTER_SAFE_DIST = 60   -- labu dekat monster dilewati
-local FLEE_DIST = 50           -- monster sedekat ini = kabur ke posisi aman
-local DEBUG_PATH = false       -- true = print status jalur di console
-
+local WALK_SPEED = 32
+local REACH_DIST = 2.5
+local REPATH_TIME = 1.0
+local STUCK_TIME = 0.5
+local STUCK_DIST = 1.0
+local AGENT_RADIUS = 4
+local RAY_LEN = 8
+local SIDE_ANGLE = 40
+local STEER_DIST = 10
+local STEER_HOLD = 0.5
+local TRAVEL_TIME = 12
+local COLLECT_TIME = 2.5
+local SKIP_TIME = 4
+local PLAYER_AVOID = 5
+local MONSTER_NAMES = {}
+local MONSTER_SAFE_DIST = 60
+local FLEE_DIST = 50
+local DEBUG_PATH = false
 local running, isOn = true, false
 local collected = 0
 local safePos = nil
 local ignore = {}
 local monsters, lastMonsterScan = {}, 0
 local conns = {}
-
 local function connect(sig, fn)
     local c = sig:Connect(fn)
     table.insert(conns, c)
     return c
 end
-
 local function getRoot()
     local ch = LP.Character
     return ch and ch:FindFirstChild("HumanoidRootPart")
 end
-
 local function getHumanoid()
     local ch = LP.Character
     return ch and ch:FindFirstChildOfClass("Humanoid")
 end
-
 local function pickPart(m)
     if m:IsA("BasePart") then return m end
     return m.PrimaryPart or m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Part") or m:FindFirstChildWhichIsA("BasePart", true)
 end
-
 local function flatDist(a, b)
     return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
 end
-
 local function applySpeed(hum)
     if WALK_SPEED and hum.WalkSpeed ~= WALK_SPEED then
         hum.WalkSpeed = WALK_SPEED
     end
 end
-
--- ================= GUI =================
 local guiParent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 local gui = Instance.new("ScreenGui")
 gui.Name = "PumpkinAdapt_Gui"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = guiParent
-
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 260, 0, 140)
 panel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -83,7 +70,6 @@ panel.Active = true
 panel.Draggable = true
 panel.Parent = gui
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
-
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
@@ -92,7 +78,6 @@ title.TextColor3 = Color3.fromRGB(255, 165, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 13
 title.Parent = panel
-
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -20, 0, 40)
 statusLabel.Position = UDim2.new(0, 10, 0, 30)
@@ -103,7 +88,6 @@ statusLabel.Font = Enum.Font.Code
 statusLabel.TextSize = 11
 statusLabel.TextWrapped = true
 statusLabel.Parent = panel
-
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(1, -20, 0, 35)
 toggleBtn.Position = UDim2.new(0, 10, 0, 85)
@@ -114,12 +98,9 @@ toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.TextSize = 13
 toggleBtn.Parent = panel
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
-
 local function setStatus(t)
     statusLabel.Text = string.format("%s\nSpeed %s | Diambil: %d", t, tostring(WALK_SPEED or "normal"), collected)
 end
-
--- ===== Monster =====
 local function refreshMonsters()
     if #MONSTER_NAMES == 0 then return end
     local now = os.clock()
@@ -135,14 +116,12 @@ local function refreshMonsters()
         end
     end
 end
-
 local function monsterWithin(pos, dist)
     for _, p in ipairs(monsters) do
         if p.Parent and (p.Position - pos).Magnitude < dist then return true end
     end
     return false
 end
-
 local function playerNear(pos, dist)
     for _, pl in ipairs(Players:GetPlayers()) do
         if pl ~= LP and pl.Character then
@@ -152,19 +131,15 @@ local function playerNear(pos, dist)
     end
     return false
 end
-
--- ===== Labu =====
 local function isGone(obj, part)
     return (not obj) or (not obj.Parent) or (not part) or (not part.Parent)
         or (not part:IsDescendantOf(Workspace)) or part.Transparency >= 1
 end
-
 local function findNearest()
     local root = getRoot()
     if not root then return nil end
     refreshMonsters()
     local now = os.clock()
-
     local function search(avoidPlayers)
         local best, bestPart, bestDist = nil, nil, math.huge
         local function check(obj)
@@ -185,12 +160,10 @@ local function findNearest()
         end
         return best, bestPart
     end
-
     local o, p = search(true)
     if o then return o, p end
     return search(false)
 end
-
 local function triggerPickup(obj, part, root)
     if fireproximityprompt then
         for _, d in ipairs(obj:GetDescendants()) do
@@ -204,8 +177,6 @@ local function triggerPickup(obj, part, root)
         end)
     end
 end
-
--- ===== Raycast (deteksi tembok/dekorasi) =====
 local rayParams, rayAt = nil, 0
 local function getRayParams()
     local now = os.clock()
@@ -223,15 +194,12 @@ local function getRayParams()
     rayParams = RaycastParams.new()
     rayParams.FilterType = Enum.RaycastFilterType.Exclude
     rayParams.FilterDescendantsInstances = list
-    rayParams.RespectCanCollide = true -- hanya objek solid yang dianggap penghalang
+    rayParams.RespectCanCollide = true
     return rayParams
 end
-
 local function rotateY(dir, deg)
     return CFrame.Angles(0, math.rad(deg), 0):VectorToWorldSpace(dir)
 end
-
--- Jarak bebas ke arah dir (cek setinggi lutut dan badan). RAY_LEN = bebas.
 local HEIGHTS = { -1.5, 0.5 }
 local function clearance(origin, dir)
     local params = getRayParams()
@@ -242,8 +210,6 @@ local function clearance(origin, dir)
     end
     return best
 end
-
--- ===== Pathfinding =====
 local function computePath(from, to)
     local path = PathfindingService:CreatePath({
         AgentRadius = AGENT_RADIUS,
@@ -262,51 +228,39 @@ local function computePath(from, to)
     end
     return nil
 end
-
--- ===== Jalan cepat + hindari tembok =====
 local function travel(target, stopDist, maxTime, abortFn)
     local t0 = os.clock()
     local wps, lastCompute = nil, 0
     local lastPos, lastCheck = nil, os.clock()
     local steerAngle, steerUntil = 0, 0
-
     while running and isOn do
         local root, hum = getRoot(), getHumanoid()
         if not root or not hum or hum.Health <= 0 then return false end
         local now = os.clock()
-
         applySpeed(hum)
-
         if flatDist(root.Position, target) <= stopDist then return true end
         if now - t0 > maxTime then return false end
         if abortFn and abortFn() then return false end
-
         if not wps or now - lastCompute > REPATH_TIME then
             local list = computePath(root.Position, target)
             if list then
                 wps = list
             elseif not wps then
-                return false -- tidak ada jalur: labu dilewati, bukan ditabrak lurus
+                return false
             end
             lastCompute = now
         end
-
         while wps[1] and flatDist(root.Position, wps[1].Position) < REACH_DIST do
             table.remove(wps, 1)
         end
-
         local wp = wps[1]
         local nextp = wp and wp.Position or target
         if wp and wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
-
-        -- Lapisan penghindar tembok (raycast)
         local flat = Vector3.new(nextp.X - root.Position.X, 0, nextp.Z - root.Position.Z)
         if flat.Magnitude > 0.5 then
             local dir = flat.Unit
             local origin = root.Position
-
             if now < steerUntil then
-                -- tetap di arah belok sebentar supaya tidak goyang kiri-kanan
                 nextp = origin + rotateY(dir, steerAngle) * STEER_DIST
             else
                 local front = clearance(origin, dir)
@@ -314,9 +268,7 @@ local function travel(target, stopDist, maxTime, abortFn)
                     local left = clearance(origin, rotateY(dir, SIDE_ANGLE))
                     local right = clearance(origin, rotateY(dir, -SIDE_ANGLE))
                     local bestSide = math.max(left, right)
-
                     if bestSide < 3 then
-                        -- buntu: loncat dan hitung ulang jalur
                         hum.Jump = true
                         wps = nil
                     else
@@ -327,10 +279,7 @@ local function travel(target, stopDist, maxTime, abortFn)
                 end
             end
         end
-
         hum:MoveTo(nextp)
-
-        -- deteksi macet
         if now - lastCheck > STUCK_TIME then
             if lastPos and (root.Position - lastPos).Magnitude < STUCK_DIST then
                 hum.Jump = true
@@ -338,14 +287,11 @@ local function travel(target, stopDist, maxTime, abortFn)
             end
             lastPos, lastCheck = root.Position, now
         end
-
         setStatus("Menuju labu")
         task.wait(0.05)
     end
     return false
 end
-
--- Berjalan di sekitar labu sampai labunya hilang
 local function collectPhase(obj, part)
     local t0, k, lastK, lastTrig = os.clock(), 0, os.clock(), 0
     while running and isOn and os.clock() - t0 < COLLECT_TIME do
@@ -364,13 +310,10 @@ local function collectPhase(obj, part)
     end
     return isGone(obj, part)
 end
-
--- ================= LOOP UTAMA =================
 task.spawn(function()
     while running do
         task.wait(0.1)
         if not isOn then continue end
-
         local root, hum = getRoot(), getHumanoid()
         if not root or not hum or hum.Health <= 0 then
             statusLabel.Text = "Karakter tidak siap!"
@@ -379,8 +322,6 @@ task.spawn(function()
         if root.Anchored then root.Anchored = false end
         applySpeed(hum)
         refreshMonsters()
-
-        -- Kabur kalau monster mendekat
         if safePos and monsterWithin(root.Position, FLEE_DIST) then
             setStatus("Monster dekat, kabur")
             travel(safePos, 4, 10, nil)
@@ -391,19 +332,16 @@ task.spawn(function()
             end
             continue
         end
-
         local obj, part = findNearest()
         if not obj then
             setStatus("Tidak ada labu")
             task.wait(0.3)
             continue
         end
-
         local arrived = travel(part.Position, 3.5, TRAVEL_TIME, function()
             local r = getRoot()
             return isGone(obj, part) or (r and monsterWithin(r.Position, FLEE_DIST))
         end)
-
         if isGone(obj, part) then
             collected += 1
         elseif arrived then
@@ -417,8 +355,6 @@ task.spawn(function()
         end
     end
 end)
-
--- Tombol ON/OFF
 connect(toggleBtn.MouseButton1Click, function()
     isOn = not isOn
     local root, hum = getRoot(), getHumanoid()
@@ -436,8 +372,6 @@ connect(toggleBtn.MouseButton1Click, function()
         statusLabel.Text = "Dimatikan manual."
     end
 end)
-
--- Cleanup
 env.__PUMPKIN_ADAPT_CLEANUP = function()
     running, isOn = false, false
     local root = getRoot()
@@ -445,5 +379,4 @@ env.__PUMPKIN_ADAPT_CLEANUP = function()
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     if gui then gui:Destroy() end
 end
-
 print("[PumpkinFastWalk v2] Script aktif!")
