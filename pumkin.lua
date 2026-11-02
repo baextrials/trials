@@ -1,5 +1,4 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local PathfindingService = game:GetService("PathfindingService")
 local LP = Players.LocalPlayer
@@ -9,26 +8,21 @@ local env = (getgenv and getgenv()) or _G
 if env.__PUMPKIN_ADAPT_CLEANUP then pcall(env.__PUMPKIN_ADAPT_CLEANUP) end
 
 -- ===== SETTING =====
-local START_HOP = 20
-local MIN_HOP = 10
-local MAX_HOP = 40
-local HOP_INTERVAL = 0.08
-local CHECK_DELAY = 0.2
-local RUBBER_TOL = 4
-local WALL_CLEARANCE = 2.5     -- jarak aman dari tembok (studs)
-local WALK_FALLBACK_TIME = 8
-local TRAVEL_TIME = 12
-local COLLECT_TIME = 2.5
-local SKIP_TIME = 4
-local PLAYER_AVOID = 5
-local WALK_SPEED = nil
+local WALK_SPEED = 48          -- 3x dari 16 (kalau ditarik balik/kena kick, coba 32)
+local REACH_DIST = 4           -- jarak dianggap sampai di waypoint (besar biar tidak berputar)
+local REPATH_TIME = 1.0        -- hitung ulang jalur tiap sekian detik (cepat = perlu sering)
+local STUCK_TIME = 0.5         -- cek macet tiap sekian detik
+local STUCK_DIST = 1.0         -- bergerak kurang dari ini = macet
+local AGENT_RADIUS = 3         -- makin besar makin menjauh dari tembok/dekorasi
+local TRAVEL_TIME = 12         -- maks detik menuju satu labu
+local COLLECT_TIME = 2.5       -- maks detik berjalan di dekat labu
+local SKIP_TIME = 4            -- detik labu gagal diabaikan
+local PLAYER_AVOID = 5         -- labu sedekat ini dari pemain lain dilewati dulu
 local MONSTER_NAMES = {}       -- diisi nanti kalau sudah tahu namanya
-local MONSTER_SAFE_DIST = 60
-local FLEE_DIST = 50
+local MONSTER_SAFE_DIST = 60   -- labu dekat monster dilewati
+local FLEE_DIST = 50           -- monster sedekat ini = kabur ke posisi aman
 
 local running, isOn = true, false
-local hopDist, rubberCount = START_HOP, 0
-local mode, walkUntil = "hop", 0
 local collected = 0
 local safePos = nil
 local ignore = {}
@@ -56,18 +50,14 @@ local function pickPart(m)
     return m.PrimaryPart or m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Part") or m:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function legLift()
-    local root, hum = getRoot(), getHumanoid()
-    return ((hum and hum.HipHeight) or 2) + (root and root.Size.Y / 2 or 1)
-end
-
-local function zeroVel(root)
-    root.AssemblyLinearVelocity = Vector3.zero
-    root.AssemblyAngularVelocity = Vector3.zero
-end
-
 local function flatDist(a, b)
     return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
+end
+
+local function applySpeed(hum)
+    if WALK_SPEED and hum.WalkSpeed ~= WALK_SPEED then
+        hum.WalkSpeed = WALK_SPEED
+    end
 end
 
 -- ================= GUI =================
@@ -92,7 +82,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "🎃 Pumpkin Adaptive Hop"
+title.Text = "🎃 Pumpkin Fast Walk"
 title.TextColor3 = Color3.fromRGB(255, 165, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 13
@@ -121,7 +111,7 @@ toggleBtn.Parent = panel
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
 
 local function setStatus(t)
-    statusLabel.Text = string.format("%s\n%s %.1f | Diambil: %d", t, mode == "hop" and "Hop" or "Jalan", hopDist, collected)
+    statusLabel.Text = string.format("%s\nSpeed %s | Diambil: %d", t, tostring(WALK_SPEED or "normal"), collected)
 end
 
 -- ===== Monster =====
@@ -210,148 +200,83 @@ local function triggerPickup(obj, part, root)
     end
 end
 
--- ===== Path & ray =====
-local rayParams, rayAt = nil, 0
-local function getRayParams()
-    local now = os.clock()
-    if rayParams and now - rayAt < 1 then return rayParams end
-    rayAt = now
-    local list = { LP.Character }
-    local folder = Workspace:FindFirstChild("LocalPumpkins")
-    if folder then table.insert(list, folder) end
-    for _, o in ipairs(Workspace:GetChildren()) do
-        if o.Name == "TreatPumpkinLocal" then table.insert(list, o) end
-    end
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LP and pl.Character then table.insert(list, pl.Character) end
-    end
-    rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-    rayParams.FilterDescendantsInstances = list
-    return rayParams
-end
-
--- Cek tembok di 3 tinggi (kaki, badan, kepala); ambil jarak terdekat
-local WALL_OFFSETS = { Vector3.new(0, -2, 0), Vector3.new(0, 0, 0), Vector3.new(0, 2, 0) }
-local function clearDistance(origin, dir, maxDist)
-    local params = getRayParams()
-    local best = maxDist
-    for _, off in ipairs(WALL_OFFSETS) do
-        local hit = Workspace:Raycast(origin + off, dir * (maxDist + WALL_CLEARANCE), params)
-        if hit then
-            local d = hit.Distance - WALL_CLEARANCE
-            if d < best then best = d end
-        end
-    end
-    return math.max(0, best)
-end
-
+-- ===== Pathfinding =====
 local function computePath(from, to)
     local path = PathfindingService:CreatePath({
-        AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, WaypointSpacing = 6,
+        AgentRadius = AGENT_RADIUS,
+        AgentHeight = 5,
+        AgentCanJump = true,
+        WaypointSpacing = 8,
     })
     local ok = pcall(function() path:ComputeAsync(from, to) end)
     if ok and path.Status == Enum.PathStatus.Success then
         local list = {}
         for i, w in ipairs(path:GetWaypoints()) do
-            if i > 1 then table.insert(list, w.Position) end
+            if i > 1 then table.insert(list, w) end
         end
         return list
     end
     return nil
 end
 
--- ===== Gerak adaptif =====
+-- ===== Jalan cepat =====
+-- Karakter berjalan asli (WalkSpeed tinggi) lewat waypoint pathfinding,
+-- jadi tembok dan dekorasi dihindari oleh fisika + jalur, tanpa teleport.
 local function travel(target, stopDist, maxTime, abortFn)
     local t0 = os.clock()
     local wps, lastCompute = nil, 0
-    local lastPos, lastMoveT = nil, os.clock()
+    local lastPos, lastCheck = nil, os.clock()
 
     while running and isOn do
         local root, hum = getRoot(), getHumanoid()
         if not root or not hum or hum.Health <= 0 then return false end
         local now = os.clock()
 
+        applySpeed(hum)
+
         if flatDist(root.Position, target) <= stopDist then return true end
         if now - t0 > maxTime then return false end
         if abortFn and abortFn() then return false end
 
-        if not wps or now - lastCompute > 2.5 then
-            wps = computePath(root.Position, target) or { target }
+        if not wps or now - lastCompute > REPATH_TIME then
+            local list = computePath(root.Position, target)
+            wps = list or { { Position = target, Action = Enum.PathWaypointAction.Walk } }
             lastCompute = now
         end
-        while wps[1] and flatDist(root.Position, wps[1]) < 2.5 do table.remove(wps, 1) end
-        local nextp = wps[1] or target
 
-        if mode == "walk" and now > walkUntil then
-            mode = "hop"
-            hopDist = MIN_HOP * 2
-            rubberCount = 0
+        while wps[1] and flatDist(root.Position, wps[1].Position) < REACH_DIST do
+            table.remove(wps, 1)
         end
 
-        if mode == "hop" then
-            local stand = nextp + Vector3.new(0, legLift(), 0)
-            local delta = stand - root.Position
-            local total = delta.Magnitude
-            local dir = delta.Unit
-            local step = math.min(hopDist, total)
+        local wp = wps[1]
+        local nextp = wp and wp.Position or target
+        if wp and wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
 
-            -- jangan menembus dinding
-            step = clearDistance(root.Position, dir, step)
+        hum:MoveTo(nextp)
 
-            if step > 0.3 then
-                local newPos = root.Position + dir * step
-                local flat = Vector3.new(delta.X, 0, delta.Z)
-                local look = flat.Magnitude > 0.1 and (newPos + flat) or (newPos + root.CFrame.LookVector)
-                root.CFrame = CFrame.lookAt(newPos, Vector3.new(look.X, newPos.Y, look.Z))
-                zeroVel(root)
-                hum:MoveTo(nextp)
-
-                task.wait(CHECK_DELAY)
-                local r2 = getRoot()
-                if not r2 then return false end
-                if (r2.Position - newPos).Magnitude > RUBBER_TOL then
-                    rubberCount += 1
-                    hopDist = math.max(MIN_HOP, hopDist * 0.8)
-                    if hopDist <= MIN_HOP and rubberCount >= 5 then
-                        mode = "walk"
-                        walkUntil = os.clock() + WALK_FALLBACK_TIME
-                    end
-                else
-                    rubberCount = math.max(0, rubberCount - 1)
-                    hopDist = math.min(MAX_HOP, hopDist * 1.15)
-                end
-                setStatus("Menuju labu")
-                task.wait(HOP_INTERVAL)
-            else
-                -- terhalang: jalan asli sebentar
-                hum:MoveTo(nextp)
+        -- deteksi macet: loncat dan hitung ulang jalur
+        if now - lastCheck > STUCK_TIME then
+            if lastPos and (root.Position - lastPos).Magnitude < STUCK_DIST then
                 hum.Jump = true
                 wps = nil
-                task.wait(0.2)
             end
-        else
-            hum:MoveTo(nextp)
-            task.wait(0.15)
-            if not lastPos or now - lastMoveT > 0.6 then
-                if lastPos and (root.Position - lastPos).Magnitude < 0.3 then
-                    hum.Jump = true
-                    wps = nil
-                end
-                lastPos, lastMoveT = root.Position, now
-            end
-            setStatus("Berjalan ke labu")
+            lastPos, lastCheck = root.Position, now
         end
+
+        setStatus("Menuju labu")
+        task.wait(0.05)
     end
     return false
 end
 
+-- Berjalan di sekitar labu sampai labunya hilang
 local function collectPhase(obj, part)
     local t0, k, lastK, lastTrig = os.clock(), 0, os.clock(), 0
     while running and isOn and os.clock() - t0 < COLLECT_TIME do
         if isGone(obj, part) then return true end
         local root, hum = getRoot(), getHumanoid()
         if not root or not hum then return false end
+        applySpeed(hum)
         local now = os.clock()
         if now - lastK > 0.5 then lastK = now; k += 1 end
         local a = k * math.pi / 2
@@ -376,9 +301,10 @@ task.spawn(function()
             continue
         end
         if root.Anchored then root.Anchored = false end
-        if WALK_SPEED and hum.WalkSpeed ~= WALK_SPEED then hum.WalkSpeed = WALK_SPEED end
+        applySpeed(hum)
         refreshMonsters()
 
+        -- Kabur kalau monster mendekat
         if safePos and monsterWithin(root.Position, FLEE_DIST) then
             setStatus("Monster dekat, kabur")
             travel(safePos, 4, 10, nil)
@@ -416,13 +342,13 @@ task.spawn(function()
     end
 end)
 
+-- Tombol ON/OFF
 connect(toggleBtn.MouseButton1Click, function()
     isOn = not isOn
     local root, hum = getRoot(), getHumanoid()
     if isOn then
         if root then safePos = root.Position; root.Anchored = false end
         collected = 0
-        mode, hopDist, rubberCount = "hop", START_HOP, 0
         toggleBtn.Text = "Auto-Collect: ON"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
         statusLabel.Text = "Aktif!"
@@ -435,6 +361,7 @@ connect(toggleBtn.MouseButton1Click, function()
     end
 end)
 
+-- Cleanup
 env.__PUMPKIN_ADAPT_CLEANUP = function()
     running, isOn = false, false
     local root = getRoot()
@@ -443,4 +370,4 @@ env.__PUMPKIN_ADAPT_CLEANUP = function()
     if gui then gui:Destroy() end
 end
 
-print("[PumpkinAdaptive] Script aktif!")
+print("[PumpkinFastWalk] Script aktif!")
