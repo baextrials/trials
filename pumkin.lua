@@ -8,12 +8,16 @@ local env = (getgenv and getgenv()) or _G
 if env.__PUMPKIN_ADAPT_CLEANUP then pcall(env.__PUMPKIN_ADAPT_CLEANUP) end
 
 -- ===== SETTING =====
-local WALK_SPEED = 48          -- 3x dari 16 (kalau ditarik balik/kena kick, coba 32)
-local REACH_DIST = 4           -- jarak dianggap sampai di waypoint (besar biar tidak berputar)
-local REPATH_TIME = 1.0        -- hitung ulang jalur tiap sekian detik (cepat = perlu sering)
+local WALK_SPEED = 32          -- turunkan (28/24/20) kalau masih ditarik balik
+local REACH_DIST = 2.5         -- jarak dianggap sampai di waypoint
+local REPATH_TIME = 1.0        -- hitung ulang jalur tiap sekian detik
 local STUCK_TIME = 0.5         -- cek macet tiap sekian detik
 local STUCK_DIST = 1.0         -- bergerak kurang dari ini = macet
-local AGENT_RADIUS = 3         -- makin besar makin menjauh dari tembok/dekorasi
+local AGENT_RADIUS = 4         -- makin besar makin menjauh dari tembok
+local RAY_LEN = 8              -- panjang sinar deteksi tembok (studs)
+local SIDE_ANGLE = 40          -- sudut sinar kiri/kanan (derajat)
+local STEER_DIST = 10          -- seberapa jauh titik belok saat menghindar
+local STEER_HOLD = 0.5         -- tahan arah belok sekian detik (anti goyang)
 local TRAVEL_TIME = 12         -- maks detik menuju satu labu
 local COLLECT_TIME = 2.5       -- maks detik berjalan di dekat labu
 local SKIP_TIME = 4            -- detik labu gagal diabaikan
@@ -21,6 +25,7 @@ local PLAYER_AVOID = 5         -- labu sedekat ini dari pemain lain dilewati dul
 local MONSTER_NAMES = {}       -- diisi nanti kalau sudah tahu namanya
 local MONSTER_SAFE_DIST = 60   -- labu dekat monster dilewati
 local FLEE_DIST = 50           -- monster sedekat ini = kabur ke posisi aman
+local DEBUG_PATH = false       -- true = print status jalur di console
 
 local running, isOn = true, false
 local collected = 0
@@ -82,7 +87,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "🎃 Pumpkin Fast Walk"
+title.Text = "🎃 Pumpkin Fast Walk v2"
 title.TextColor3 = Color3.fromRGB(255, 165, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 13
@@ -200,6 +205,44 @@ local function triggerPickup(obj, part, root)
     end
 end
 
+-- ===== Raycast (deteksi tembok/dekorasi) =====
+local rayParams, rayAt = nil, 0
+local function getRayParams()
+    local now = os.clock()
+    if rayParams and now - rayAt < 1 then return rayParams end
+    rayAt = now
+    local list = { LP.Character }
+    local folder = Workspace:FindFirstChild("LocalPumpkins")
+    if folder then table.insert(list, folder) end
+    for _, o in ipairs(Workspace:GetChildren()) do
+        if o.Name == "TreatPumpkinLocal" then table.insert(list, o) end
+    end
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LP and pl.Character then table.insert(list, pl.Character) end
+    end
+    rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = list
+    rayParams.RespectCanCollide = true -- hanya objek solid yang dianggap penghalang
+    return rayParams
+end
+
+local function rotateY(dir, deg)
+    return CFrame.Angles(0, math.rad(deg), 0):VectorToWorldSpace(dir)
+end
+
+-- Jarak bebas ke arah dir (cek setinggi lutut dan badan). RAY_LEN = bebas.
+local HEIGHTS = { -1.5, 0.5 }
+local function clearance(origin, dir)
+    local params = getRayParams()
+    local best = RAY_LEN
+    for _, h in ipairs(HEIGHTS) do
+        local hit = Workspace:Raycast(origin + Vector3.new(0, h, 0), dir * RAY_LEN, params)
+        if hit and hit.Distance < best then best = hit.Distance end
+    end
+    return best
+end
+
 -- ===== Pathfinding =====
 local function computePath(from, to)
     local path = PathfindingService:CreatePath({
@@ -209,6 +252,7 @@ local function computePath(from, to)
         WaypointSpacing = 8,
     })
     local ok = pcall(function() path:ComputeAsync(from, to) end)
+    if DEBUG_PATH then print("[Path]", ok and path.Status or "error") end
     if ok and path.Status == Enum.PathStatus.Success then
         local list = {}
         for i, w in ipairs(path:GetWaypoints()) do
@@ -219,13 +263,12 @@ local function computePath(from, to)
     return nil
 end
 
--- ===== Jalan cepat =====
--- Karakter berjalan asli (WalkSpeed tinggi) lewat waypoint pathfinding,
--- jadi tembok dan dekorasi dihindari oleh fisika + jalur, tanpa teleport.
+-- ===== Jalan cepat + hindari tembok =====
 local function travel(target, stopDist, maxTime, abortFn)
     local t0 = os.clock()
     local wps, lastCompute = nil, 0
     local lastPos, lastCheck = nil, os.clock()
+    local steerAngle, steerUntil = 0, 0
 
     while running and isOn do
         local root, hum = getRoot(), getHumanoid()
@@ -240,7 +283,11 @@ local function travel(target, stopDist, maxTime, abortFn)
 
         if not wps or now - lastCompute > REPATH_TIME then
             local list = computePath(root.Position, target)
-            wps = list or { { Position = target, Action = Enum.PathWaypointAction.Walk } }
+            if list then
+                wps = list
+            elseif not wps then
+                return false -- tidak ada jalur: labu dilewati, bukan ditabrak lurus
+            end
             lastCompute = now
         end
 
@@ -252,9 +299,38 @@ local function travel(target, stopDist, maxTime, abortFn)
         local nextp = wp and wp.Position or target
         if wp and wp.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
 
+        -- Lapisan penghindar tembok (raycast)
+        local flat = Vector3.new(nextp.X - root.Position.X, 0, nextp.Z - root.Position.Z)
+        if flat.Magnitude > 0.5 then
+            local dir = flat.Unit
+            local origin = root.Position
+
+            if now < steerUntil then
+                -- tetap di arah belok sebentar supaya tidak goyang kiri-kanan
+                nextp = origin + rotateY(dir, steerAngle) * STEER_DIST
+            else
+                local front = clearance(origin, dir)
+                if front < RAY_LEN then
+                    local left = clearance(origin, rotateY(dir, SIDE_ANGLE))
+                    local right = clearance(origin, rotateY(dir, -SIDE_ANGLE))
+                    local bestSide = math.max(left, right)
+
+                    if bestSide < 3 then
+                        -- buntu: loncat dan hitung ulang jalur
+                        hum.Jump = true
+                        wps = nil
+                    else
+                        steerAngle = (left >= right) and (SIDE_ANGLE + 15) or -(SIDE_ANGLE + 15)
+                        steerUntil = now + STEER_HOLD
+                        nextp = origin + rotateY(dir, steerAngle) * STEER_DIST
+                    end
+                end
+            end
+        end
+
         hum:MoveTo(nextp)
 
-        -- deteksi macet: loncat dan hitung ulang jalur
+        -- deteksi macet
         if now - lastCheck > STUCK_TIME then
             if lastPos and (root.Position - lastPos).Magnitude < STUCK_DIST then
                 hum.Jump = true
@@ -370,4 +446,4 @@ env.__PUMPKIN_ADAPT_CLEANUP = function()
     if gui then gui:Destroy() end
 end
 
-print("[PumpkinFastWalk] Script aktif!")
+print("[PumpkinFastWalk v2] Script aktif!")
