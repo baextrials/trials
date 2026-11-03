@@ -1,7 +1,6 @@
 -- ========================================================
 -- NAMECHECK — "baex trials" (v4 · Clean UI)
 -- Tombol jendela:
---   [—]  Kecilkan  : besar -> normal -> hanya bilah judul -> normal
 --   [☐]  Besarkan  : normal <-> hampir layar penuh
 --   [×]  Tutup     : muncul konfirmasi "Ya / Tidak"
 -- ========================================================
@@ -298,7 +297,7 @@ TopBar.Parent = MainFrame
 makeDraggable(TopBar, MainFrame)
 
 local TitleLbl = Instance.new("TextLabel")
-TitleLbl.Size = UDim2.new(1, -170, 0, 22)
+TitleLbl.Size = UDim2.new(1, -130, 0, 22)
 TitleLbl.Position = UDim2.new(0, 22, 0, 12)
 TitleLbl.BackgroundTransparency = 1
 TitleLbl.Text = WINDOW_TITLE
@@ -310,7 +309,7 @@ TitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
 TitleLbl.Parent = TopBar
 
 local SubLbl = Instance.new("TextLabel")
-SubLbl.Size = UDim2.new(1, -170, 0, 16)
+SubLbl.Size = UDim2.new(1, -130, 0, 16)
 SubLbl.Position = UDim2.new(0, 22, 0, 33)
 SubLbl.BackgroundTransparency = 1
 SubLbl.Text = WINDOW_SUB
@@ -323,8 +322,8 @@ SubLbl.Parent = TopBar
 
 -- Tombol jendela
 local WinBtns = Instance.new("Frame")
-WinBtns.Size = UDim2.new(0, 114, 0, 30)
-WinBtns.Position = UDim2.new(1, -128, 0, 16)
+WinBtns.Size = UDim2.new(0, 74, 0, 30)
+WinBtns.Position = UDim2.new(1, -88, 0, 16)
 WinBtns.BackgroundTransparency = 1
 WinBtns.Parent = TopBar
 
@@ -340,17 +339,8 @@ local function makeWinBtn(index)
     return B
 end
 
-local MinBtn, MaxBtn, ClsBtn = makeWinBtn(1), makeWinBtn(2), makeWinBtn(3)
+local MaxBtn, ClsBtn = makeWinBtn(1), makeWinBtn(2)
 
-do -- glyph kecilkan: garis
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(0, 12, 0, 2)
-    f.AnchorPoint = Vector2.new(0.5, 0.5)
-    f.Position = UDim2.new(0.5, 0, 0.5, 0)
-    f.BackgroundColor3 = C.TextDim
-    f.BorderSizePixel = 0
-    f.Parent = MinBtn
-end
 do -- glyph besarkan: kotak
     local f = Instance.new("Frame")
     f.Size = UDim2.new(0, 11, 0, 11)
@@ -402,36 +392,24 @@ local function setLogHeight(windowH)
     for _, b in ipairs(logBoxes) do b.Size = UDim2.new(1, 0, 0, h) end
 end
 
--- State jendela: "normal" | "maximized" | "collapsed"
+-- State jendela: "normal" | "maximized"
 local winState = "normal"
 
 local function setState(s)
     local vp = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or viewport
     if s == "maximized" then
-        if winState ~= "maximized" then normalPos = MainFrame.Position end
+        normalPos = MainFrame.Position
         tween(MainFrame, {
             Size = UDim2.new(0, vp.X - 20, 0, vp.Y - 20),
             Position = UDim2.new(0, 10, 0, 10),
         }, 0.2)
         setLogHeight(vp.Y - 20)
-    elseif s == "normal" then
-        local pos = (winState == "maximized") and normalPos or MainFrame.Position
-        tween(MainFrame, { Size = UDim2.new(0, normalW, 0, normalH), Position = pos }, 0.2)
+    else
+        tween(MainFrame, { Size = UDim2.new(0, normalW, 0, normalH), Position = normalPos }, 0.2)
         setLogHeight(normalH)
-    else -- collapsed
-        local pos = (winState == "maximized") and normalPos or MainFrame.Position
-        tween(MainFrame, { Size = UDim2.new(0, normalW, 0, TITLE_H), Position = pos }, 0.2)
     end
     winState = s
-    ContentArea.Visible = (s ~= "collapsed")
-    Sidebar.Visible = (s ~= "collapsed")
 end
-
-MinBtn.MouseButton1Click:Connect(function()
-    if winState == "maximized" then setState("normal")
-    elseif winState == "normal" then setState("collapsed")
-    else setState("normal") end
-end)
 
 MaxBtn.MouseButton1Click:Connect(function()
     if winState == "maximized" then setState("normal") else setState("maximized") end
@@ -930,7 +908,7 @@ CreateButtonRow(ScanR,
 -- ---- Tap ----
 local TapL = CreateColumn(TapPage, "KONTROL", "L")
 CreateToggle(TapL, "Mode Tap", tapOn, nil, function(v) tapOn = v end)
-CreateText(TapL, "Aktifkan, lalu sentuh objek di dunia. Laporan tampil di kolom kanan.", 64)
+CreateText(TapL, "Aktifkan, lalu sentuh objek di dunia. Buka menu (≡) untuk melihat laporan di kolom kanan.", 64)
 
 local TapR = CreateColumn(TapPage, "LOG TAP", "R")
 local _tapBox
@@ -948,7 +926,7 @@ CreateButtonRow(TapR,
 -- ---- Settings ----
 local SetL = CreateColumn(SettingsPage, "INFO", "L")
 CreateText(SetL,
-    "NameCheck v4\n\n• ESP: filter & label\n• Scan: radius + log\n• Tap: info lengkap objek\n\n[—] kecilkan   [☐] besarkan\n[×] tutup (dengan konfirmasi)\nGeser jendela lewat bilah judul.",
+    "NameCheck v4\n\n• ESP: filter & label\n• Scan: radius + log\n• Tap: info lengkap objek\n\n[☐] besarkan / kecilkan\n[×] tutup (dengan konfirmasi)\nGeser jendela lewat bilah judul.",
     170)
 
 local SetR = CreateColumn(SettingsPage, "AKSI", "R")
@@ -1168,9 +1146,6 @@ connect(UIS.InputBegan, function(input, gp)
     end
     logs.tap = buildTapReport(t)
     TapLogLbl.Text = logs.tap
-    MainFrame.Visible = true
-    if winState == "collapsed" then setState("normal") end
-    setActiveTab("Tap")
 end)
 
 -- Label auto-update
