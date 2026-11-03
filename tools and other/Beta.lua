@@ -1,21 +1,24 @@
 -- ========================================================
--- NAMECHECK — "baex trials" UI (v3)
--- Desc  : ESP / Scan / Tap Inspector dengan tampilan jendela hitam,
---         tab bulat ungu, dan dua kolom abu-abu (MENU 1 | MENU 2)
--- Tombol jendela: [—] minimize  [☐] maximize  [×] tutup
+-- NAMECHECK — "baex trials" (v4 · Clean UI)
+-- Tombol jendela:
+--   [—]  Kecilkan  : besar -> normal -> hanya bilah judul -> normal
+--   [☐]  Besarkan  : normal <-> hampir layar penuh
+--   [×]  Tutup     : muncul konfirmasi "Ya / Tidak"
 -- ========================================================
 
-local Players   = game:GetService("Players")
-local UIS       = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
-local LP        = Players.LocalPlayer
-local Mouse     = LP:GetMouse()
+local Players      = game:GetService("Players")
+local UIS          = game:GetService("UserInputService")
+local Workspace    = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local LP           = Players.LocalPlayer
+local Mouse        = LP:GetMouse()
 
 local env = (getgenv and getgenv()) or _G
 if env.__NAMECHECK_CLEANUP then pcall(env.__NAMECHECK_CLEANUP) end
 
 -- ===== Konfigurasi =====
 local WINDOW_TITLE  = "baex trials"
+local WINDOW_SUB    = "NameCheck · ESP & Inspector"
 local radius        = 100
 local labelsOn      = false
 local tapOn         = false
@@ -24,11 +27,13 @@ local MAXLABELS     = 25
 local MAXSIZE       = 40
 local MAX_DESC_SHOW = 80
 local filters = { Pemain = true, Musuh = true, Entitas = true, Objek = false }
+
+-- warna label di dunia game (sedikit diredam)
 local COLORS = {
-    Pemain  = Color3.fromRGB(80, 255, 120),
-    Musuh   = Color3.fromRGB(255, 80, 80),
-    Entitas = Color3.fromRGB(255, 230, 80),
-    Objek   = Color3.fromRGB(80, 180, 255),
+    Pemain  = Color3.fromRGB(120, 215, 150),
+    Musuh   = Color3.fromRGB(235, 110, 110),
+    Entitas = Color3.fromRGB(230, 200, 110),
+    Objek   = Color3.fromRGB(120, 170, 230),
 }
 
 local running  = true
@@ -142,7 +147,7 @@ local function collect()
 end
 
 -- =====================================================
--- UI FRAMEWORK  (gaya "baex trials")
+-- UI
 -- =====================================================
 local function getGuiParent()
     if gethui then
@@ -155,23 +160,44 @@ local function getGuiParent()
 end
 local CoreGui = getGuiParent()
 
-local Colors = {
-    Window       = Color3.fromRGB(0, 0, 0),
-    Panel        = Color3.fromRGB(140, 140, 140),
-    PanelDark    = Color3.fromRGB(95, 95, 95),
-    HeaderText   = Color3.fromRGB(15, 15, 15),
-    Text         = Color3.fromRGB(255, 255, 255),
-    TextDim      = Color3.fromRGB(230, 230, 230),
-    Purple       = Color3.fromRGB(112, 52, 130),
-    PurpleActive = Color3.fromRGB(165, 95, 190),
-    Green        = Color3.fromRGB(168, 222, 168),
-    Glyph        = Color3.fromRGB(0, 0, 0),
-    Accent       = Color3.fromRGB(40, 140, 220),
-    Danger       = Color3.fromRGB(200, 70, 70),
-    Success      = Color3.fromRGB(70, 180, 90),
-    ButtonOff    = Color3.fromRGB(60, 60, 60),
-    LogBg        = Color3.fromRGB(28, 28, 28),
+-- Palet tenang: abu arang + biru baja
+local C = {
+    Window     = Color3.fromRGB(22, 23, 28),
+    Stroke     = Color3.fromRGB(50, 53, 62),
+    Panel      = Color3.fromRGB(31, 33, 40),
+    PanelLine  = Color3.fromRGB(46, 49, 58),
+    Control    = Color3.fromRGB(40, 43, 52),
+    Text       = Color3.fromRGB(228, 230, 236),
+    TextDim    = Color3.fromRGB(148, 154, 168),
+    Accent     = Color3.fromRGB(84, 122, 170),
+    Secondary  = Color3.fromRGB(46, 49, 58),
+    Success    = Color3.fromRGB(62, 112, 90),
+    Danger     = Color3.fromRGB(148, 66, 66),
+    DangerSoft = Color3.fromRGB(214, 122, 122),
+    TrackOff   = Color3.fromRGB(62, 65, 75),
+    LogBg      = Color3.fromRGB(17, 18, 22),
+    LogText    = Color3.fromRGB(190, 196, 208),
 }
+
+local function tween(obj, props, t)
+    TweenService:Create(obj, TweenInfo.new(t or 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function corner(obj, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = r
+    c.Parent = obj
+    return c
+end
+
+local function stroke(obj, color, thick)
+    local s = Instance.new("UIStroke")
+    s.Color = color
+    s.Thickness = thick or 1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = obj
+    return s
+end
 
 local old = CoreGui:FindFirstChild("VenyxFramework")
 if old then old:Destroy() end
@@ -220,17 +246,19 @@ local function makeDraggable(handle, target)
     return state
 end
 
--- Tombol buka (bulat ungu)
+-- Tombol buka (bulat, gelap)
 local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Size = UDim2.new(0, 46, 0, 46)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.4, 0)
-ToggleBtn.BackgroundColor3 = Colors.Purple
+ToggleBtn.BackgroundColor3 = C.Window
 ToggleBtn.Text = "≡"
-ToggleBtn.TextColor3 = Colors.Text
+ToggleBtn.TextColor3 = C.Text
 ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 26
+ToggleBtn.TextSize = 24
+ToggleBtn.AutoButtonColor = false
 ToggleBtn.Parent = ScreenGui
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+corner(ToggleBtn, UDim.new(1, 0))
+stroke(ToggleBtn, C.Stroke, 1)
 
 -- Ukuran jendela
 local viewport = Vector2.new(800, 500)
@@ -240,19 +268,21 @@ do
 end
 local normalW = math.min(600, viewport.X - 20)
 local normalH = math.min(400, viewport.Y - 20)
-local curW, curH = normalW, normalH
 local normalPos = UDim2.new(0.5, -normalW / 2, 0.5, -normalH / 2)
+local TITLE_H = 62
 
 -- Frame utama
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, curW, 0, curH)
+MainFrame.Size = UDim2.new(0, normalW, 0, normalH)
 MainFrame.Position = normalPos
-MainFrame.BackgroundColor3 = Colors.Window
+MainFrame.BackgroundColor3 = C.Window
 MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
 MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 18)
+corner(MainFrame, UDim.new(0, 16))
+stroke(MainFrame, C.Stroke, 1)
 
 local toggleDrag = makeDraggable(ToggleBtn, ToggleBtn)
 ToggleBtn.MouseButton1Click:Connect(function()
@@ -262,130 +292,222 @@ end)
 
 -- Bilah judul (area drag)
 local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 62)
+TopBar.Size = UDim2.new(1, 0, 0, TITLE_H)
 TopBar.BackgroundTransparency = 1
 TopBar.Parent = MainFrame
 makeDraggable(TopBar, MainFrame)
 
 local TitleLbl = Instance.new("TextLabel")
-TitleLbl.Size = UDim2.new(1, -170, 1, 0)
-TitleLbl.Position = UDim2.new(0, 26, 0, 0)
+TitleLbl.Size = UDim2.new(1, -170, 0, 22)
+TitleLbl.Position = UDim2.new(0, 22, 0, 12)
 TitleLbl.BackgroundTransparency = 1
 TitleLbl.Text = WINDOW_TITLE
-TitleLbl.TextColor3 = Colors.Text
-TitleLbl.Font = Enum.Font.GothamBlack
-TitleLbl.TextSize = 20
+TitleLbl.TextColor3 = C.Text
+TitleLbl.Font = Enum.Font.GothamBold
+TitleLbl.TextSize = 16
 TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
 TitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
 TitleLbl.Parent = TopBar
 
--- Kotak hijau berisi tombol jendela
+local SubLbl = Instance.new("TextLabel")
+SubLbl.Size = UDim2.new(1, -170, 0, 16)
+SubLbl.Position = UDim2.new(0, 22, 0, 33)
+SubLbl.BackgroundTransparency = 1
+SubLbl.Text = WINDOW_SUB
+SubLbl.TextColor3 = C.TextDim
+SubLbl.Font = Enum.Font.Gotham
+SubLbl.TextSize = 11
+SubLbl.TextXAlignment = Enum.TextXAlignment.Left
+SubLbl.TextTruncate = Enum.TextTruncate.AtEnd
+SubLbl.Parent = TopBar
+
+-- Tombol jendela
 local WinBtns = Instance.new("Frame")
-WinBtns.Size = UDim2.new(0, 120, 0, 40)
-WinBtns.Position = UDim2.new(1, -136, 0, 11)
-WinBtns.BackgroundColor3 = Colors.Green
-WinBtns.BorderSizePixel = 0
+WinBtns.Size = UDim2.new(0, 114, 0, 30)
+WinBtns.Position = UDim2.new(1, -128, 0, 16)
+WinBtns.BackgroundTransparency = 1
 WinBtns.Parent = TopBar
-Instance.new("UICorner", WinBtns).CornerRadius = UDim.new(0, 3)
 
 local function makeWinBtn(index)
     local B = Instance.new("TextButton")
-    B.Size = UDim2.new(1 / 3, 0, 1, 0)
-    B.Position = UDim2.new((index - 1) / 3, 0, 0, 0)
-    B.BackgroundTransparency = 1
+    B.Size = UDim2.new(0, 34, 0, 30)
+    B.Position = UDim2.new(0, (index - 1) * 40, 0, 0)
+    B.BackgroundColor3 = C.Control
     B.Text = ""
     B.AutoButtonColor = false
     B.Parent = WinBtns
+    corner(B, UDim.new(0, 8))
     return B
 end
 
 local MinBtn, MaxBtn, ClsBtn = makeWinBtn(1), makeWinBtn(2), makeWinBtn(3)
 
-do -- glyph minimize: garis
+do -- glyph kecilkan: garis
     local f = Instance.new("Frame")
-    f.Size = UDim2.new(0, 16, 0, 3)
+    f.Size = UDim2.new(0, 12, 0, 2)
     f.AnchorPoint = Vector2.new(0.5, 0.5)
     f.Position = UDim2.new(0.5, 0, 0.5, 0)
-    f.BackgroundColor3 = Colors.Glyph
+    f.BackgroundColor3 = C.TextDim
     f.BorderSizePixel = 0
     f.Parent = MinBtn
 end
-do -- glyph maximize: kotak
+do -- glyph besarkan: kotak
     local f = Instance.new("Frame")
-    f.Size = UDim2.new(0, 14, 0, 12)
+    f.Size = UDim2.new(0, 11, 0, 11)
     f.AnchorPoint = Vector2.new(0.5, 0.5)
     f.Position = UDim2.new(0.5, 0, 0.5, 0)
     f.BackgroundTransparency = 1
     f.Parent = MaxBtn
-    local s = Instance.new("UIStroke")
-    s.Thickness = 3
-    s.Color = Colors.Glyph
-    s.Parent = f
+    stroke(f, C.TextDim, 2)
 end
-do -- glyph tutup: X dari dua garis
+do -- glyph tutup: X
     for _, rot in ipairs({ 45, -45 }) do
         local f = Instance.new("Frame")
-        f.Size = UDim2.new(0, 20, 0, 3)
+        f.Size = UDim2.new(0, 15, 0, 2)
         f.AnchorPoint = Vector2.new(0.5, 0.5)
         f.Position = UDim2.new(0.5, 0, 0.5, 0)
         f.Rotation = rot
-        f.BackgroundColor3 = Colors.Glyph
+        f.BackgroundColor3 = C.DangerSoft
         f.BorderSizePixel = 0
         f.Parent = ClsBtn
     end
 end
 
--- Sidebar (tab bulat ungu)
+-- Sidebar (tab bulat)
 local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 48, 1, -76)
-Sidebar.Position = UDim2.new(0, 8, 0, 62)
+Sidebar.Size = UDim2.new(0, 48, 1, -(TITLE_H + 14))
+Sidebar.Position = UDim2.new(0, 10, 0, TITLE_H)
 Sidebar.BackgroundTransparency = 1
 Sidebar.Parent = MainFrame
-local SB = Instance.new("UIListLayout")
-SB.SortOrder = Enum.SortOrder.LayoutOrder
-SB.Padding = UDim.new(0, 12)
-SB.HorizontalAlignment = Enum.HorizontalAlignment.Center
-SB.VerticalAlignment = Enum.VerticalAlignment.Top
-SB.Parent = Sidebar
+do
+    local L = Instance.new("UIListLayout")
+    L.SortOrder = Enum.SortOrder.LayoutOrder
+    L.Padding = UDim.new(0, 10)
+    L.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    L.VerticalAlignment = Enum.VerticalAlignment.Top
+    L.Parent = Sidebar
+end
 
--- Area konten (2 kolom per tab)
+-- Area konten
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -76, 1, -76)
-ContentArea.Position = UDim2.new(0, 64, 0, 62)
+ContentArea.Size = UDim2.new(1, -76, 1, -(TITLE_H + 14))
+ContentArea.Position = UDim2.new(0, 66, 0, TITLE_H)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
 
--- Logika tombol jendela
-local minimized, maximized = false, false
+-- Tinggi kotak log mengikuti ukuran jendela
+local logBoxes = {}
+local function setLogHeight(windowH)
+    local h = math.max(120, windowH - 196)
+    for _, b in ipairs(logBoxes) do b.Size = UDim2.new(1, 0, 0, h) end
+end
 
-local function applySize()
-    MainFrame.Size = UDim2.new(0, curW, 0, minimized and 62 or curH)
-    ContentArea.Visible = not minimized
-    Sidebar.Visible = not minimized
+-- State jendela: "normal" | "maximized" | "collapsed"
+local winState = "normal"
+
+local function setState(s)
+    local vp = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or viewport
+    if s == "maximized" then
+        if winState ~= "maximized" then normalPos = MainFrame.Position end
+        tween(MainFrame, {
+            Size = UDim2.new(0, vp.X - 20, 0, vp.Y - 20),
+            Position = UDim2.new(0, 10, 0, 10),
+        }, 0.2)
+        setLogHeight(vp.Y - 20)
+    elseif s == "normal" then
+        local pos = (winState == "maximized") and normalPos or MainFrame.Position
+        tween(MainFrame, { Size = UDim2.new(0, normalW, 0, normalH), Position = pos }, 0.2)
+        setLogHeight(normalH)
+    else -- collapsed
+        local pos = (winState == "maximized") and normalPos or MainFrame.Position
+        tween(MainFrame, { Size = UDim2.new(0, normalW, 0, TITLE_H), Position = pos }, 0.2)
+    end
+    winState = s
+    ContentArea.Visible = (s ~= "collapsed")
+    Sidebar.Visible = (s ~= "collapsed")
 end
 
 MinBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    applySize()
+    if winState == "maximized" then setState("normal")
+    elseif winState == "normal" then setState("collapsed")
+    else setState("normal") end
 end)
 
 MaxBtn.MouseButton1Click:Connect(function()
-    minimized = false
-    maximized = not maximized
-    if maximized then
-        normalPos = MainFrame.Position
-        local cam = Workspace.CurrentCamera
-        local vp = cam and cam.ViewportSize or viewport
-        curW, curH = vp.X - 20, vp.Y - 20
-        MainFrame.Position = UDim2.new(0, 10, 0, 10)
-    else
-        curW, curH = normalW, normalH
-        MainFrame.Position = normalPos
-    end
-    applySize()
+    if winState == "maximized" then setState("normal") else setState("maximized") end
 end)
 
-ClsBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+-- Dialog konfirmasi tutup (Ya / Tidak)
+local Confirm = Instance.new("TextButton")
+Confirm.Size = UDim2.new(1, 0, 1, 0)
+Confirm.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Confirm.BackgroundTransparency = 0.5
+Confirm.BorderSizePixel = 0
+Confirm.Text = ""
+Confirm.AutoButtonColor = false
+Confirm.Visible = false
+Confirm.ZIndex = 50
+Confirm.Parent = ScreenGui
+
+do
+    local Card = Instance.new("Frame")
+    Card.Size = UDim2.new(0, 300, 0, 156)
+    Card.AnchorPoint = Vector2.new(0.5, 0.5)
+    Card.Position = UDim2.new(0.5, 0, 0.5, 0)
+    Card.BackgroundColor3 = C.Window
+    Card.BorderSizePixel = 0
+    Card.Parent = Confirm
+    corner(Card, UDim.new(0, 14))
+    stroke(Card, C.Stroke, 1)
+
+    local T = Instance.new("TextLabel")
+    T.Size = UDim2.new(1, -40, 0, 24)
+    T.Position = UDim2.new(0, 20, 0, 16)
+    T.BackgroundTransparency = 1
+    T.Text = "Tutup NameCheck?"
+    T.TextColor3 = C.Text
+    T.Font = Enum.Font.GothamBold
+    T.TextSize = 16
+    T.TextXAlignment = Enum.TextXAlignment.Left
+    T.Parent = Card
+
+    local M = Instance.new("TextLabel")
+    M.Size = UDim2.new(1, -40, 0, 50)
+    M.Position = UDim2.new(0, 20, 0, 44)
+    M.BackgroundTransparency = 1
+    M.Text = "UI dan semua label ESP akan dihapus. Jalankan skrip lagi untuk membukanya kembali."
+    M.TextColor3 = C.TextDim
+    M.Font = Enum.Font.Gotham
+    M.TextSize = 12
+    M.TextWrapped = true
+    M.TextXAlignment = Enum.TextXAlignment.Left
+    M.TextYAlignment = Enum.TextYAlignment.Top
+    M.Parent = Card
+
+    local function dlgBtn(text, color, xScale, xOff, cb)
+        local B = Instance.new("TextButton")
+        B.Size = UDim2.new(0.5, -26, 0, 34)
+        B.Position = UDim2.new(xScale, xOff, 1, -50)
+        B.BackgroundColor3 = color
+        B.Text = text
+        B.TextColor3 = C.Text
+        B.Font = Enum.Font.GothamBold
+        B.TextSize = 13
+        B.AutoButtonColor = false
+        B.Parent = Card
+        corner(B, UDim.new(0, 8))
+        B.MouseButton1Click:Connect(cb)
+        return B
+    end
+
+    dlgBtn("Tidak", C.Secondary, 0, 20, function() Confirm.Visible = false end)
+    dlgBtn("Ya, tutup", C.Danger, 0.5, 6, function()
+        if env.__NAMECHECK_CLEANUP then env.__NAMECHECK_CLEANUP() end
+    end)
+end
+
+local function askClose() Confirm.Visible = true end
+ClsBtn.MouseButton1Click:Connect(askClose)
 
 -- Tabs
 local Pages, TabButtons = {}, {}
@@ -394,20 +516,24 @@ local function setActiveTab(name)
     for n, p in pairs(Pages) do p.Visible = (n == name) end
     for n, b in pairs(TabButtons) do
         local on = (n == name)
-        b.BackgroundColor3 = on and Colors.PurpleActive or Colors.Purple
+        tween(b, {
+            BackgroundColor3 = on and C.Accent or C.Control,
+            TextColor3 = on and Color3.fromRGB(255, 255, 255) or C.TextDim,
+        })
     end
 end
 
-local function CreateTab(name, icon)
+local function CreateTab(name, label)
     local Btn = Instance.new("TextButton")
     Btn.Size = UDim2.new(0, 44, 0, 44)
-    Btn.BackgroundColor3 = Colors.Purple
-    Btn.Text = icon
-    Btn.TextColor3 = Colors.Text
+    Btn.BackgroundColor3 = C.Control
+    Btn.Text = label
+    Btn.TextColor3 = C.TextDim
     Btn.Font = Enum.Font.GothamBold
-    Btn.TextSize = 18
+    Btn.TextSize = 11
+    Btn.AutoButtonColor = false
     Btn.Parent = Sidebar
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(1, 0)
+    corner(Btn, UDim.new(1, 0))
 
     local Page = Instance.new("Frame")
     Page.Size = UDim2.new(1, 0, 1, 0)
@@ -421,30 +547,33 @@ local function CreateTab(name, icon)
     return Page
 end
 
-local orderCounter = 0
+-- LayoutOrder 0 = judul, 1 = garis, widget mulai dari 2
+local orderCounter = 1
 local function nextOrder()
     orderCounter = orderCounter + 1
     return orderCounter
 end
 
--- Kolom abu-abu dengan judul ("MENU 1" / "MENU 2")
+-- Kartu kolom
 local function CreateColumn(page, title, side)
     local Col = Instance.new("ScrollingFrame")
-    Col.Size = UDim2.new(0.5, -4, 1, 0)
-    Col.Position = (side == "L") and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 4, 0, 0)
-    Col.BackgroundColor3 = Colors.Panel
+    Col.Size = UDim2.new(0.5, -5, 1, 0)
+    Col.Position = (side == "L") and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 5, 0, 0)
+    Col.BackgroundColor3 = C.Panel
     Col.BorderSizePixel = 0
-    Col.ScrollBarThickness = 3
-    Col.ScrollBarImageColor3 = Colors.PanelDark
+    Col.ScrollBarThickness = 2
+    Col.ScrollBarImageColor3 = C.TrackOff
     Col.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Col.CanvasSize = UDim2.new(0, 0, 0, 0)
     Col.Parent = page
+    corner(Col, UDim.new(0, 12))
+    stroke(Col, C.PanelLine, 1)
 
     local Pad = Instance.new("UIPadding")
-    Pad.PaddingTop = UDim.new(0, 8)
-    Pad.PaddingBottom = UDim.new(0, 10)
-    Pad.PaddingLeft = UDim.new(0, 10)
-    Pad.PaddingRight = UDim.new(0, 10)
+    Pad.PaddingTop = UDim.new(0, 12)
+    Pad.PaddingBottom = UDim.new(0, 12)
+    Pad.PaddingLeft = UDim.new(0, 14)
+    Pad.PaddingRight = UDim.new(0, 14)
     Pad.Parent = Col
 
     local Lay = Instance.new("UIListLayout")
@@ -453,14 +582,22 @@ local function CreateColumn(page, title, side)
     Lay.Parent = Col
 
     local H = Instance.new("TextLabel")
-    H.Size = UDim2.new(1, 0, 0, 32)
+    H.Size = UDim2.new(1, 0, 0, 16)
     H.BackgroundTransparency = 1
     H.Text = title
-    H.TextColor3 = Colors.HeaderText
-    H.Font = Enum.Font.GothamBlack
-    H.TextSize = 18
+    H.TextColor3 = C.TextDim
+    H.Font = Enum.Font.GothamBold
+    H.TextSize = 11
+    H.TextXAlignment = Enum.TextXAlignment.Left
     H.LayoutOrder = 0
     H.Parent = Col
+
+    local Line = Instance.new("Frame")
+    Line.Size = UDim2.new(1, 0, 0, 1)
+    Line.BackgroundColor3 = C.PanelLine
+    Line.BorderSizePixel = 0
+    Line.LayoutOrder = 1
+    Line.Parent = Col
     return Col
 end
 
@@ -469,9 +606,9 @@ local function CreateText(parent, text, height)
     L.Size = UDim2.new(1, 0, 0, height or 60)
     L.BackgroundTransparency = 1
     L.Text = text
-    L.TextColor3 = Colors.TextDim
+    L.TextColor3 = C.TextDim
     L.Font = Enum.Font.Gotham
-    L.TextSize = 13
+    L.TextSize = 12
     L.TextWrapped = true
     L.TextXAlignment = Enum.TextXAlignment.Left
     L.TextYAlignment = Enum.TextYAlignment.Top
@@ -480,41 +617,61 @@ local function CreateText(parent, text, height)
     return L
 end
 
-local function CreateToggle(parent, text, default, accent, callback)
-    accent = accent or Colors.Accent
+-- Toggle bergaya switch; dotColor = penanda warna kategori (opsional)
+local function CreateToggle(parent, text, default, dotColor, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 32)
+    Row.Size = UDim2.new(1, 0, 0, 30)
     Row.BackgroundTransparency = 1
     Row.LayoutOrder = nextOrder()
     Row.Parent = parent
 
+    local textX = 0
+    if dotColor then
+        local Dot = Instance.new("Frame")
+        Dot.Size = UDim2.new(0, 8, 0, 8)
+        Dot.Position = UDim2.new(0, 0, 0.5, -4)
+        Dot.BackgroundColor3 = dotColor
+        Dot.BorderSizePixel = 0
+        Dot.Parent = Row
+        corner(Dot, UDim.new(1, 0))
+        textX = 16
+    end
+
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(1, -62, 1, 0)
+    Lbl.Size = UDim2.new(1, -(50 + textX), 1, 0)
+    Lbl.Position = UDim2.new(0, textX, 0, 0)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = text
-    Lbl.TextColor3 = Colors.Text
+    Lbl.TextColor3 = C.Text
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 14
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.TextTruncate = Enum.TextTruncate.AtEnd
     Lbl.Parent = Row
 
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(0, 52, 0, 24)
-    Btn.Position = UDim2.new(1, -52, 0.5, -12)
-    Btn.BackgroundColor3 = default and accent or Colors.ButtonOff
-    Btn.Text = default and "ON" or "OFF"
-    Btn.TextColor3 = Colors.Text
-    Btn.Font = Enum.Font.GothamBold
-    Btn.TextSize = 11
-    Btn.Parent = Row
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(1, 0)
+    local Track = Instance.new("TextButton")
+    Track.Size = UDim2.new(0, 40, 0, 22)
+    Track.Position = UDim2.new(1, -40, 0.5, -11)
+    Track.BackgroundColor3 = default and C.Accent or C.TrackOff
+    Track.Text = ""
+    Track.AutoButtonColor = false
+    Track.Parent = Row
+    corner(Track, UDim.new(1, 0))
+
+    local Knob = Instance.new("Frame")
+    Knob.Size = UDim2.new(0, 16, 0, 16)
+    Knob.AnchorPoint = Vector2.new(0, 0.5)
+    Knob.Position = default and UDim2.new(0, 21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
+    Knob.BackgroundColor3 = Color3.fromRGB(240, 242, 246)
+    Knob.BorderSizePixel = 0
+    Knob.Parent = Track
+    corner(Knob, UDim.new(1, 0))
 
     local state = default
-    Btn.MouseButton1Click:Connect(function()
+    Track.MouseButton1Click:Connect(function()
         state = not state
-        Btn.Text = state and "ON" or "OFF"
-        Btn.BackgroundColor3 = state and accent or Colors.ButtonOff
+        tween(Track, { BackgroundColor3 = state and C.Accent or C.TrackOff })
+        tween(Knob, { Position = state and UDim2.new(0, 21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0) })
         if callback then callback(state) end
     end)
     return Row
@@ -522,22 +679,23 @@ end
 
 local function CreateButton(parent, text, color, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, 0, 0, 32)
-    Btn.BackgroundColor3 = color or Colors.Accent
+    Btn.Size = UDim2.new(1, 0, 0, 34)
+    Btn.BackgroundColor3 = color or C.Accent
     Btn.Text = text
-    Btn.TextColor3 = Colors.Text
+    Btn.TextColor3 = C.Text
     Btn.Font = Enum.Font.GothamBold
-    Btn.TextSize = 13
+    Btn.TextSize = 12
+    Btn.AutoButtonColor = false
     Btn.LayoutOrder = nextOrder()
     Btn.Parent = parent
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+    corner(Btn, UDim.new(0, 8))
     Btn.MouseButton1Click:Connect(function() callback(Btn) end)
     return Btn
 end
 
 local function CreateButtonRow(parent, cfg1, cfg2)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 32)
+    Row.Size = UDim2.new(1, 0, 0, 34)
     Row.BackgroundTransparency = 1
     Row.LayoutOrder = nextOrder()
     Row.Parent = parent
@@ -546,13 +704,14 @@ local function CreateButtonRow(parent, cfg1, cfg2)
         local B = Instance.new("TextButton")
         B.Size = UDim2.new(0.5, -3, 1, 0)
         B.Position = UDim2.new(xScale, xOffset, 0, 0)
-        B.BackgroundColor3 = cfg.color or Colors.Accent
+        B.BackgroundColor3 = cfg.color or C.Accent
         B.Text = cfg.text
-        B.TextColor3 = Colors.Text
+        B.TextColor3 = C.Text
         B.Font = Enum.Font.GothamBold
         B.TextSize = 12
+        B.AutoButtonColor = false
         B.Parent = Row
-        Instance.new("UICorner", B).CornerRadius = UDim.new(0, 6)
+        corner(B, UDim.new(0, 8))
         if cfg.callback then
             B.MouseButton1Click:Connect(function() cfg.callback(B) end)
         end
@@ -564,53 +723,62 @@ local function CreateButtonRow(parent, cfg1, cfg2)
     return Row
 end
 
--- Slider; mengembalikan fungsi setter (untuk sinkronisasi antar-slider)
+-- Slider; mengembalikan setter agar bisa disinkronkan
 local function CreateSlider(parent, text, min, max, default, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 46)
+    Row.Size = UDim2.new(1, 0, 0, 44)
     Row.BackgroundTransparency = 1
     Row.LayoutOrder = nextOrder()
     Row.Parent = parent
 
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(1, -60, 0, 20)
+    Lbl.Size = UDim2.new(1, -56, 0, 18)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = text
-    Lbl.TextColor3 = Colors.Text
+    Lbl.TextColor3 = C.Text
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 14
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.Parent = Row
 
     local Val = Instance.new("TextLabel")
-    Val.Size = UDim2.new(0, 56, 0, 20)
-    Val.Position = UDim2.new(1, -56, 0, 0)
+    Val.Size = UDim2.new(0, 52, 0, 18)
+    Val.Position = UDim2.new(1, -52, 0, 0)
     Val.BackgroundTransparency = 1
     Val.Text = tostring(default)
-    Val.TextColor3 = Colors.Text
+    Val.TextColor3 = C.TextDim
     Val.Font = Enum.Font.GothamBold
-    Val.TextSize = 13
+    Val.TextSize = 12
     Val.TextXAlignment = Enum.TextXAlignment.Right
     Val.Parent = Row
 
     local Bar = Instance.new("Frame")
-    Bar.Size = UDim2.new(1, 0, 0, 6)
-    Bar.Position = UDim2.new(0, 0, 0, 32)
-    Bar.BackgroundColor3 = Colors.PanelDark
+    Bar.Size = UDim2.new(1, 0, 0, 4)
+    Bar.Position = UDim2.new(0, 0, 0, 31)
+    Bar.BackgroundColor3 = C.TrackOff
     Bar.BorderSizePixel = 0
     Bar.Parent = Row
-    Instance.new("UICorner", Bar).CornerRadius = UDim.new(1, 0)
+    corner(Bar, UDim.new(1, 0))
 
     local Fill = Instance.new("Frame")
     Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    Fill.BackgroundColor3 = Colors.PurpleActive
+    Fill.BackgroundColor3 = C.Accent
     Fill.BorderSizePixel = 0
     Fill.Parent = Bar
-    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+    corner(Fill, UDim.new(1, 0))
+
+    local Knob = Instance.new("Frame")
+    Knob.Size = UDim2.new(0, 12, 0, 12)
+    Knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    Knob.Position = UDim2.new((default - min) / (max - min), 0, 0.5, 0)
+    Knob.BackgroundColor3 = Color3.fromRGB(240, 242, 246)
+    Knob.BorderSizePixel = 0
+    Knob.Parent = Bar
+    corner(Knob, UDim.new(1, 0))
 
     local Hit = Instance.new("TextButton")
-    Hit.Size = UDim2.new(1, 0, 0, 26)
-    Hit.Position = UDim2.new(0, 0, 0, 22)
+    Hit.Size = UDim2.new(1, 0, 0, 24)
+    Hit.Position = UDim2.new(0, 0, 0, 21)
     Hit.BackgroundTransparency = 1
     Hit.Text = ""
     Hit.Parent = Row
@@ -619,6 +787,7 @@ local function CreateSlider(parent, text, min, max, default, callback)
         local rel = math.clamp((v - min) / (max - min), 0, 1)
         Val.Text = tostring(v)
         Fill.Size = UDim2.new(rel, 0, 1, 0)
+        Knob.Position = UDim2.new(rel, 0, 0.5, 0)
     end
 
     local dragging = false
@@ -653,24 +822,25 @@ local function CreateSlider(parent, text, min, max, default, callback)
     return Row, setValue
 end
 
-local function CreateLogBox(parent, height)
+local function CreateLogBox(parent)
     local Box = Instance.new("ScrollingFrame")
-    Box.Size = UDim2.new(1, 0, 0, height or 190)
-    Box.BackgroundColor3 = Colors.LogBg
+    Box.Size = UDim2.new(1, 0, 0, math.max(120, normalH - 196))
+    Box.BackgroundColor3 = C.LogBg
     Box.BorderSizePixel = 0
-    Box.ScrollBarThickness = 3
-    Box.ScrollBarImageColor3 = Colors.PurpleActive
+    Box.ScrollBarThickness = 2
+    Box.ScrollBarImageColor3 = C.TrackOff
     Box.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Box.CanvasSize = UDim2.new(0, 0, 0, 0)
     Box.LayoutOrder = nextOrder()
     Box.Parent = parent
-    Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 6)
+    corner(Box, UDim.new(0, 8))
+    table.insert(logBoxes, Box)
 
     local Pad = Instance.new("UIPadding")
-    Pad.PaddingLeft = UDim.new(0, 6)
-    Pad.PaddingRight = UDim.new(0, 6)
-    Pad.PaddingTop = UDim.new(0, 6)
-    Pad.PaddingBottom = UDim.new(0, 6)
+    Pad.PaddingLeft = UDim.new(0, 8)
+    Pad.PaddingRight = UDim.new(0, 8)
+    Pad.PaddingTop = UDim.new(0, 8)
+    Pad.PaddingBottom = UDim.new(0, 8)
     Pad.Parent = Box
 
     local Lbl = Instance.new("TextLabel")
@@ -680,7 +850,7 @@ local function CreateLogBox(parent, height)
     Lbl.TextWrapped = true
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.TextYAlignment = Enum.TextYAlignment.Top
-    Lbl.TextColor3 = Color3.fromRGB(225, 225, 225)
+    Lbl.TextColor3 = C.LogText
     Lbl.Font = Enum.Font.Code
     Lbl.TextSize = 11
     Lbl.Text = ""
@@ -693,19 +863,19 @@ local function copyText(str, btn)
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, str) else print(str) end
     local original = btn.Text
-    btn.Text = "Copied!"
+    btn.Text = "Tersalin"
     task.delay(1.5, function()
         if btn.Parent then btn.Text = original end
     end)
 end
 
 -- =====================================================
--- TABS & ISI (MENU 1 | MENU 2 di setiap tab)
+-- TABS & ISI
 -- =====================================================
-local ESPPage      = CreateTab("ESP", "👁")
-local ScanPage     = CreateTab("Scan", "🔍")
-local TapPage      = CreateTab("Tap", "👆")
-local SettingsPage = CreateTab("Settings", "⚙")
+local ESPPage      = CreateTab("ESP", "ESP")
+local ScanPage     = CreateTab("Scan", "Scan")
+local TapPage      = CreateTab("Tap", "Tap")
+local SettingsPage = CreateTab("Settings", "Set")
 
 setActiveTab("ESP")
 
@@ -728,7 +898,7 @@ CreateToggle(EspL, "Objek (BasePart)", filters.Objek, COLORS.Objek,
     function(v) filters.Objek = v end)
 
 local EspR = CreateColumn(ESPPage, "LABEL", "R")
-CreateToggle(EspR, "Label di atas objek", labelsOn, Colors.PurpleActive,
+CreateToggle(EspR, "Label di atas objek", labelsOn, nil,
     function(v) labelsOn = v; refreshLabels(collect()) end)
 do
     local _, set = CreateSlider(EspR, "Radius", 10, 500, radius, onRadius)
@@ -741,37 +911,36 @@ do
     local _, set = CreateSlider(ScanL, "Radius", 10, 500, radius, onRadius)
     table.insert(radiusSetters, set)
 end
-CreateButton(ScanL, "🔍  Scan Sekarang", Colors.PurpleActive, function() runScan() end)
-CreateText(ScanL, "Hasil scan tampil di kolom kanan. Atur filter di tab ESP.", 50)
+CreateButton(ScanL, "Scan Sekarang", C.Accent, function() runScan() end)
+CreateText(ScanL, "Hasil tampil di kolom kanan. Atur filter di tab ESP.", 40)
 
 local ScanR = CreateColumn(ScanPage, "LOG SCAN", "R")
 local _scanBox
-_scanBox, ScanLogLbl = CreateLogBox(ScanR, 190)
-ScanLogLbl.Text = "Tekan tombol Scan untuk memindai sekitar."
+_scanBox, ScanLogLbl = CreateLogBox(ScanR)
+ScanLogLbl.Text = "Tekan Scan untuk memindai sekitar."
 CreateButtonRow(ScanR,
-    { text = "📋 Copy", color = Colors.Success, callback = function(btn)
+    { text = "Copy", color = C.Success, callback = function(btn)
         copyText(logs.scan, btn)
     end },
-    { text = "🗑 Clear", color = Colors.Danger, callback = function()
+    { text = "Clear", color = C.Secondary, callback = function()
         logs.scan = ""
         ScanLogLbl.Text = ""
     end })
 
 -- ---- Tap ----
 local TapL = CreateColumn(TapPage, "KONTROL", "L")
-CreateToggle(TapL, "Mode Tap", tapOn, Colors.PurpleActive,
-    function(v) tapOn = v end)
-CreateText(TapL, "Aktifkan Mode Tap, lalu sentuh objek di dunia. Laporan tampil di kolom kanan.", 70)
+CreateToggle(TapL, "Mode Tap", tapOn, nil, function(v) tapOn = v end)
+CreateText(TapL, "Aktifkan, lalu sentuh objek di dunia. Laporan tampil di kolom kanan.", 64)
 
 local TapR = CreateColumn(TapPage, "LOG TAP", "R")
 local _tapBox
-_tapBox, TapLogLbl = CreateLogBox(TapR, 190)
+_tapBox, TapLogLbl = CreateLogBox(TapR)
 TapLogLbl.Text = "Belum ada tap."
 CreateButtonRow(TapR,
-    { text = "📋 Copy", color = Colors.Success, callback = function(btn)
+    { text = "Copy", color = C.Success, callback = function(btn)
         copyText(logs.tap, btn)
     end },
-    { text = "🗑 Clear", color = Colors.Danger, callback = function()
+    { text = "Clear", color = C.Secondary, callback = function()
         logs.tap = ""
         TapLogLbl.Text = ""
     end })
@@ -779,13 +948,11 @@ CreateButtonRow(TapR,
 -- ---- Settings ----
 local SetL = CreateColumn(SettingsPage, "INFO", "L")
 CreateText(SetL,
-    "NameCheck v3\n\n• ESP: filter & label\n• Scan: radius + log\n• Tap: info lengkap objek\n• Geser jendela lewat bilah judul\n• [—] kecilkan  [☐] besarkan  [×] tutup",
-    130)
+    "NameCheck v4\n\n• ESP: filter & label\n• Scan: radius + log\n• Tap: info lengkap objek\n\n[—] kecilkan   [☐] besarkan\n[×] tutup (dengan konfirmasi)\nGeser jendela lewat bilah judul.",
+    170)
 
 local SetR = CreateColumn(SettingsPage, "AKSI", "R")
-CreateButton(SetR, "🗑 Destroy UI", Colors.Danger, function()
-    if env.__NAMECHECK_CLEANUP then env.__NAMECHECK_CLEANUP() end
-end)
+CreateButton(SetR, "Tutup & Hapus UI", C.Danger, function() askClose() end)
 
 -- =====================================================
 -- FUNGSI CORE
@@ -817,9 +984,9 @@ refreshLabels = function(found)
             local t = Instance.new("TextLabel")
             t.Size = UDim2.new(1, 0, 1, 0)
             t.BackgroundTransparency = 1
-            t.TextStrokeTransparency = 0
+            t.TextStrokeTransparency = 0.3
             t.Font = Enum.Font.GothamBold
-            t.TextSize = 14
+            t.TextSize = 13
             t.Parent = bb
             e = { bb = bb, t = t, part = f.part }
             labelMap[m] = e
@@ -1002,6 +1169,7 @@ connect(UIS.InputBegan, function(input, gp)
     logs.tap = buildTapReport(t)
     TapLogLbl.Text = logs.tap
     MainFrame.Visible = true
+    if winState == "collapsed" then setState("normal") end
     setActiveTab("Tap")
 end)
 
@@ -1027,7 +1195,7 @@ env.__NAMECHECK_CLEANUP = function()
     env.__NAMECHECK_CLEANUP = nil
 end
 
-print("[NameCheck v3] siap. Tombol ≡ di kiri layar.")
+print("[NameCheck v4] siap. Tombol ≡ di kiri layar.")
 
 -- ========================================================
 -- END OF FILE
