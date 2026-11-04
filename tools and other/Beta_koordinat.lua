@@ -157,11 +157,11 @@ local Colors = {
     ButtonOff   = Color3.fromRGB(50, 50, 50),
 }
 
-local old = CoreGui:FindFirstChild("VenyxFramework")
+local old = CoreGui:FindFirstChild("BaexTrials")
 if old then old:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VenyxFramework"
+ScreenGui.Name = "BaexTrials"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.ScreenInsets = Enum.ScreenInsets.None end)
