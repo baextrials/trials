@@ -962,7 +962,7 @@ env.__NAMECHECK_CLEANUP = function()
     env.__NAMECHECK_CLEANUP = nil
 end
 
-print("[NameCheck-Venyx] siap. Tombol ≡ di kiri layar.")
+print("[NameCheck-Baex] siap. Tombol ≡ di kiri layar.")
 
 -- ========================================================
 -- END OF FILE
