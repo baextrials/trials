@@ -1,8 +1,5 @@
 -- ========================================================
--- NAMECHECK — BAEX STYLE (fixed) + KOORDINAT + GUI INSPECTOR
--- Desc  : ESP / Name Check / Tap Inspector / GUI Inspector dengan UI Baex
--- Tambahan: toggle koordinat floating (tab ESP)
--- Tambahan: tab GUI -> tap elemen GUI game, lihat info + highlight
+-- NAMECHECK — BAEX STYLE (fixed) + KOORDINAT + GUI INSPECTOR (v2)
 -- ========================================================
 
 local Players      = game:GetService("Players")
@@ -15,7 +12,6 @@ local Mouse        = LP:GetMouse()
 local env = (getgenv and getgenv()) or _G
 if env.__NAMECHECK_CLEANUP then pcall(env.__NAMECHECK_CLEANUP) end
 
--- ===== Konfigurasi =====
 local radius        = 100
 local labelsOn      = false
 local tapOn         = false
@@ -51,7 +47,6 @@ local function getRoot()
     return ch and ch:FindFirstChild("HumanoidRootPart")
 end
 
--- ===== Sumber objek =====
 local sources, parts = {}, {}
 
 local function register(o)
@@ -62,7 +57,6 @@ local function register(o)
     end
 end
 
--- scan awal dibagi per batch supaya tidak membekukan game
 task.spawn(function()
     local n = 0
     for _, o in ipairs(Workspace:GetDescendants()) do
@@ -131,9 +125,6 @@ local function collect()
     return found
 end
 
--- =====================================================
--- UI FRAMEWORK
--- =====================================================
 local function getGuiParent()
     if gethui then
         local ok, h = pcall(gethui)
@@ -169,7 +160,6 @@ ScreenGui.IgnoreGuiInset = true
 pcall(function() ScreenGui.ScreenInsets = Enum.ScreenInsets.None end)
 ScreenGui.Parent = CoreGui
 
--- Tombol buka
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.4, 0)
@@ -181,7 +171,6 @@ ToggleBtn.TextSize = 26
 ToggleBtn.Parent = ScreenGui
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
 
--- Frame utama
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 600, 0, 400)
@@ -194,7 +183,6 @@ MainFrame.Visible = false
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 
--- Batasi ukuran di layar kecil (HP)
 do
     local cam = Workspace.CurrentCamera
     if cam then
@@ -210,7 +198,6 @@ ToggleBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
--- Topbar
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 40)
 TopBar.BackgroundColor3 = Colors.TopBar
@@ -241,7 +228,6 @@ CloseBtn.Parent = TopBar
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
--- Sidebar
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 60, 1, -40)
 Sidebar.Position = UDim2.new(0, 0, 0, 40)
@@ -255,14 +241,12 @@ SB.HorizontalAlignment = Enum.HorizontalAlignment.Center
 SB.VerticalAlignment = Enum.VerticalAlignment.Center
 SB.Parent = Sidebar
 
--- Content
 local ContentArea = Instance.new("Frame")
 ContentArea.Size = UDim2.new(1, -70, 1, -50)
 ContentArea.Position = UDim2.new(0, 65, 0, 45)
 ContentArea.BackgroundTransparency = 1
 ContentArea.Parent = MainFrame
 
--- Tabs
 local Pages, TabButtons = {}, {}
 
 local function CreateTab(name, icon)
@@ -307,7 +291,6 @@ local function CreateTab(name, icon)
     return Page
 end
 
--- Widget helper
 local function CreateSection(parent, title)
     local Sec = Instance.new("Frame")
     Sec.Size = UDim2.new(1, -10, 0, 0)
@@ -342,7 +325,6 @@ local function CreateSection(parent, title)
     return Sec
 end
 
--- LayoutOrder otomatis supaya urutan widget pasti sesuai urutan dibuat
 local orderCounter = 0
 local function nextOrder()
     orderCounter = orderCounter + 1
@@ -403,7 +385,6 @@ local function CreateButton(parent, text, color, callback)
     return Btn
 end
 
--- cfg.callback menerima tombolnya sendiri sebagai argumen (menghindari bug scope)
 local function CreateButtonRow(parent, cfg1, cfg2)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 30)
@@ -561,11 +542,6 @@ local function copyText(str, btn)
     end)
 end
 
--- =====================================================
--- KOORDINAT FLOATING
--- =====================================================
--- Terkunci di bawah tombol menu Roblox (kiri atas), tidak bisa digeser.
--- Tap kotaknya untuk menyalin koordinat ("X, Y, Z") ke clipboard.
 local CoordFrame = Instance.new("TextButton")
 CoordFrame.Name = "CoordFrame"
 CoordFrame.AutoButtonColor = false
@@ -626,155 +602,393 @@ task.spawn(function()
         end
     end
 end)
+local activeInspector = nil
 
--- =====================================================
--- GUI INSPECTOR (BARU) — logika
--- =====================================================
--- Tap elemen GUI milik game -> info lengkap + kotak highlight kuning.
--- Semua objek yang bertumpuk di titik tap bisa dipilih dengan Prev/Next.
-local guiOn    = false
-local guiStack = {}
-local guiIdx   = 0
-local guiLog   = ""
-local GuiLogLbl, GuiIdxLbl
-
-local Highlight = Instance.new("Frame")
-Highlight.Name = "GuiHighlight"
-Highlight.BackgroundColor3 = Color3.fromRGB(255, 230, 80)
-Highlight.BackgroundTransparency = 0.75
-Highlight.BorderSizePixel = 0
-Highlight.Active = false
-Highlight.Visible = false
-Highlight.ZIndex = 200
-Highlight.Parent = ScreenGui
-do
-    local st = Instance.new("UIStroke")
-    st.Color = Color3.fromRGB(255, 230, 80)
-    st.Thickness = 2
-    st.Parent = Highlight
-end
-
-local function colStr(c)
-    return string.format("%d, %d, %d",
-        math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
-end
-
-local function readProp(obj, prop)
-    local ok, v = pcall(function() return obj[prop] end)
-    if ok then return v end
-    return nil
-end
-
-local function describeGui(obj)
-    local lines = {}
-    local function add(label, v)
-        if v ~= nil then table.insert(lines, label .. tostring(v)) end
-    end
-    local function addColor(label, prop)
-        local v = readProp(obj, prop)
-        if typeof(v) == "Color3" then add(label, colStr(v)) end
+local function openGUIInspector()
+    if activeInspector then
+        pcall(activeInspector.cleanup)
+        activeInspector = nil
     end
 
-    table.insert(lines, "===== GUI INSPECTOR =====")
-    table.insert(lines, os.date("Waktu: %Y-%m-%d %H:%M:%S"))
-    table.insert(lines, string.format("Objek %d dari %d (atas -> bawah)", guiIdx, #guiStack))
-    table.insert(lines, "")
-    add("Nama      : ", obj.Name)
-    add("Kelas     : ", obj.ClassName)
-    add("Path      : ", obj:GetFullName())
-    if obj.Parent then
-        add("Parent    : ", obj.Parent.Name .. " <" .. obj.Parent.ClassName .. ">")
-    end
-    local sg = obj:FindFirstAncestorWhichIsA("ScreenGui")
-    if sg then
-        add("ScreenGui : ", sg.Name .. " (Enabled=" .. tostring(sg.Enabled) .. ")")
-    end
-    add("Visible   : ", readProp(obj, "Visible"))
-    add("Active    : ", readProp(obj, "Active"))
-    add("ZIndex    : ", readProp(obj, "ZIndex"))
-    add("LayoutOrder: ", readProp(obj, "LayoutOrder"))
-    add("Position  : ", readProp(obj, "Position"))
-    add("Size      : ", readProp(obj, "Size"))
-    add("AbsPos    : ", readProp(obj, "AbsolutePosition"))
-    add("AbsSize   : ", readProp(obj, "AbsoluteSize"))
-    addColor("BgColor   : ", "BackgroundColor3")
-    add("BgTransp  : ", readProp(obj, "BackgroundTransparency"))
-
-    local txt = readProp(obj, "Text")
-    if type(txt) == "string" then
-        if #txt > 200 then txt = string.sub(txt, 1, 200) .. "…" end
-        add("Text      : ", '"' .. txt .. '"')
-        addColor("TextColor  : ", "TextColor3")
-        add("Font      : ", readProp(obj, "Font"))
-        add("TextSize  : ", readProp(obj, "TextSize"))
-    end
-    local img = readProp(obj, "Image")
-    if type(img) == "string" then
-        add("Image     : ", img)
-        addColor("ImageColor : ", "ImageColor3")
-        add("ImgTransp : ", readProp(obj, "ImageTransparency"))
-    end
-
-    local tags = {}
-    pcall(function() tags = obj:GetTags() end)
-    if #tags > 0 then add("Tags      : ", table.concat(tags, ", ")) end
-
-    add("Children  : ", #obj:GetChildren())
-    add("Descendants: ", #obj:GetDescendants())
-    return table.concat(lines, "\n")
-end
-
-local function updateHighlight(obj)
-    if not obj or not obj.Parent then
-        Highlight.Visible = false
+    local playerGui = LP:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        warn("[Inspector] PlayerGui tidak ditemukan")
         return
     end
-    local ok = pcall(function()
-        local abs, size = obj.AbsolutePosition, obj.AbsoluteSize
-        -- Highlight berada di ScreenGui yang mengabaikan inset,
-        -- sedangkan AbsolutePosition sudah dalam koordinat layar.
-        Highlight.Position = UDim2.fromOffset(abs.X, abs.Y)
-        Highlight.Size = UDim2.fromOffset(size.X, size.Y)
-        Highlight.Visible = true
-    end)
-    if not ok then Highlight.Visible = false end
-end
 
-local function showGui(i)
-    if #guiStack == 0 then return end
-    guiIdx = ((i - 1) % #guiStack) + 1
-    local obj = guiStack[guiIdx]
-    if not obj or not obj.Parent then
-        guiLog = "Objek ini sudah dihapus dari game."
-        GuiLogLbl.Text = guiLog
-        Highlight.Visible = false
-        return
+    for _, n in ipairs({ "InspectorGui", "InspectorHL" }) do
+        local x = playerGui:FindFirstChild(n)
+        if x then pcall(function() x:Destroy() end) end
     end
-    local ok, res = pcall(describeGui, obj)
-    guiLog = ok and res or ("Gagal membaca objek: " .. tostring(res))
-    GuiLogLbl.Text = guiLog
-    GuiIdxLbl.Text = string.format("Objek %d / %d", guiIdx, #guiStack)
-    updateHighlight(obj)
-end
-
--- Cek apakah titik tap ada di dalam UI NameCheck sendiri
-local function inOwnUI(x, y)
-    local inset = GuiService:GetGuiInset()
-    local sy = y + inset.Y   -- input.Position tanpa inset -> koordinat layar
-    for _, f in ipairs({ MainFrame, ToggleBtn, CoordFrame }) do
-        if f.Visible then
-            local p, s = f.AbsolutePosition, f.AbsoluteSize
-            if x >= p.X and x <= p.X + s.X and sy >= p.Y and sy <= p.Y + s.Y then
-                return true
-            end
+    for _, d in ipairs(playerGui:GetDescendants()) do
+        if d.Name == "InspectorHighlight" then
+            pcall(function() d:Destroy() end)
         end
     end
-    return false
-end
 
--- =====================================================
--- TABS
--- =====================================================
+    local connections = {}
+    local function track(c) table.insert(connections, c) return c end
+    local hl, hlGui, ov, gui, panel
+
+    local function cleanupInspector()
+        for _, c in ipairs(connections) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(connections)
+        if hl then pcall(function() hl:Destroy() end) hl = nil end
+        if hlGui then pcall(function() hlGui:Destroy() end) hlGui = nil end
+        if gui then pcall(function() gui:Destroy() end) gui = nil end
+        if activeInspector and activeInspector.gui == gui then
+            activeInspector = nil
+        end
+    end
+
+    local ok, err = pcall(function()
+        gui = Instance.new("ScreenGui")
+        gui.Name = "InspectorGui"
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 999
+        gui.IgnoreGuiInset = true
+        gui.Parent = playerGui
+
+        local FULL = UDim2.new(0, 300, 0, 280)
+        local MINI = UDim2.new(0, 190, 0, 28)
+
+        panel = Instance.new("Frame")
+        panel.Size = FULL
+        panel.Position = UDim2.new(1, -310, 0, 60)
+        panel.BackgroundColor3 = Color3.new(0, 0, 0)
+        panel.BackgroundTransparency = 0.25
+        panel.ClipsDescendants = true
+        panel.Active = true
+        panel.Parent = gui
+
+        local header = Instance.new("Frame")
+        header.Size = UDim2.new(1, 0, 0, 28)
+        header.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        header.BorderSizePixel = 0
+        header.Active = true
+        header.Parent = panel
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, -120, 1, 0)
+        title.Position = UDim2.new(0, 8, 0, 0)
+        title.BackgroundTransparency = 1
+        title.Text = "GUI Inspector"
+        title.TextColor3 = Color3.new(1, 1, 1)
+        title.Font = Enum.Font.Code
+        title.TextSize = 13
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.Active = true
+        title.Parent = header
+
+        local function headerBtn(text, xOff, w, color)
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.new(0, w, 0, 28)
+            b.Position = UDim2.new(1, xOff, 0, 0)
+            b.BackgroundColor3 = color
+            b.BorderSizePixel = 0
+            b.Text = text
+            b.TextColor3 = Color3.new(1, 1, 1)
+            b.Font = Enum.Font.Code
+            b.TextSize = 14
+            b.Parent = header
+            return b
+        end
+
+        local copyBtn  = headerBtn("Salin", -112, 56, Color3.fromRGB(50, 100, 170))
+        local minBtn   = headerBtn("-",     -56,  28, Color3.fromRGB(60, 60, 60))
+        local closeBtn = headerBtn("X",     -28,  28, Color3.fromRGB(170, 50, 50))
+
+        local body = Instance.new("Frame")
+        body.Size = UDim2.new(1, 0, 1, -28)
+        body.Position = UDim2.new(0, 0, 0, 28)
+        body.BackgroundTransparency = 1
+        body.Active = true
+        body.Parent = panel
+
+        local function bodyBtn(text, i)
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.new(0.25, -3, 0, 28)
+            b.Position = UDim2.new(0.25 * i, 2, 0, 4)
+            b.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            b.TextColor3 = Color3.new(1, 1, 1)
+            b.Font = Enum.Font.Code
+            b.TextScaled = true
+            b.Text = text
+            b.Parent = body
+            return b
+        end
+
+        local toggleBtn  = bodyBtn("Inspect: ON",   0)
+        local prevBtn    = bodyBtn("Prev",          1)
+        local nextBtn    = bodyBtn("Next",          2)
+        local previewBtn = bodyBtn("Preview: OFF",  3)
+
+        local scroll = Instance.new("ScrollingFrame")
+        scroll.Position = UDim2.new(0, 4, 0, 36)
+        scroll.Size = UDim2.new(1, -8, 1, -40)
+        scroll.BackgroundTransparency = 1
+        scroll.ScrollBarThickness = 6
+        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.CanvasSize = UDim2.new()
+        scroll.Active = true
+        scroll.Parent = body
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -8, 0, 0)
+        label.AutomaticSize = Enum.AutomaticSize.Y
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Font = Enum.Font.Code
+        label.TextSize = 12
+        label.TextWrapped = true
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextYAlignment = Enum.TextYAlignment.Top
+        label.Text = "Tap GUI mana saja untuk melihat infonya."
+        label.Active = true
+        label.Parent = scroll
+
+        local function insidePanel(pos)
+            local inset = GuiService:GetGuiInset()
+            local x, y = pos.X + inset.X, pos.Y + inset.Y
+            local p, s = panel.AbsolutePosition, panel.AbsoluteSize
+            return x >= p.X - 4 and x <= p.X + s.X + 4
+                and y >= p.Y - 4 and y <= p.Y + s.Y + 4
+        end
+
+        local minimized = false
+        track(minBtn.Activated:Connect(function()
+            minimized = not minimized
+            body.Visible = not minimized
+            panel.Size = minimized and MINI or FULL
+            minBtn.Text = minimized and "+" or "-"
+        end))
+
+        track(closeBtn.Activated:Connect(function()
+            cleanupInspector()
+        end))
+
+        local dragging, dragStart, startPos
+        track(title.InputBegan:Connect(function(input)
+            local t = input.UserInputType
+            if t == Enum.UserInputType.Touch or t == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                dragStart = input.Position
+                startPos = panel.Position
+            end
+        end))
+        track(UIS.InputEnded:Connect(function(input)
+            local t = input.UserInputType
+            if t == Enum.UserInputType.Touch or t == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end))
+        track(UIS.InputChanged:Connect(function(input)
+            if not dragging then return end
+            local t = input.UserInputType
+            if t == Enum.UserInputType.Touch or t == Enum.UserInputType.MouseMovement then
+                local d = input.Position - dragStart
+                panel.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + d.X,
+                    startPos.Y.Scale, startPos.Y.Offset + d.Y
+                )
+            end
+        end))
+
+        local function describe(obj, idx, total)
+            local lines = {}
+            local function add(k, v) table.insert(lines, k .. ": " .. tostring(v)) end
+            add("Lapisan", idx .. " / " .. total)
+            add("Name", obj.Name)
+            add("ClassName", obj.ClassName)
+            add("Path", obj:GetFullName())
+            add("Parent", obj.Parent and (obj.Parent.Name .. " (" .. obj.Parent.ClassName .. ")") or "nil")
+            if obj:IsA("GuiObject") then
+                add("Visible", obj.Visible)
+                add("ZIndex", obj.ZIndex)
+                add("Active", obj.Active)
+                add("Position", obj.Position)
+                add("Size", obj.Size)
+                add("AbsolutePosition", obj.AbsolutePosition)
+                add("AbsoluteSize", obj.AbsoluteSize)
+                add("BackgroundColor3", obj.BackgroundColor3)
+                add("BackgroundTransparency", obj.BackgroundTransparency)
+            end
+            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                add("Text", obj.Text)
+                add("TextSize", obj.TextSize)
+            end
+            if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                add("Image", obj.Image)
+            end
+            local children = {}
+            for _, c in ipairs(obj:GetChildren()) do
+                if c.Name ~= "InspectorHighlight" then table.insert(children, c) end
+            end
+            add("Children", #children)
+            for i, c in ipairs(children) do
+                if i > 30 then
+                    table.insert(lines, "  ... (" .. (#children - 30) .. " lagi)")
+                    break
+                end
+                table.insert(lines, "  [" .. i .. "] " .. c.Name .. " (" .. c.ClassName .. ")")
+            end
+            local dcount = 0
+            for _, d in ipairs(obj:GetDescendants()) do
+                if d.Name ~= "InspectorHighlight" and not d:FindFirstAncestor("InspectorHighlight") then
+                    dcount += 1
+                end
+            end
+            add("Descendants", dcount)
+            return table.concat(lines, "\n")
+        end
+
+        local enabled = true
+        local stack, index, lastInfo = {}, 1, ""
+        local previewOn = false
+
+        local function makeHL()
+            local f = Instance.new("Frame")
+            f.Name = "InspectorHighlight"
+            f.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+            f.BackgroundTransparency = 0.8
+            f.BorderSizePixel = 0
+            f.Active = false
+            f.ZIndex = 9999
+            local s = Instance.new("UIStroke")
+            s.Color = Color3.fromRGB(255, 200, 0)
+            s.Thickness = 3
+            s.Parent = f
+            return f
+        end
+
+        hlGui = Instance.new("ScreenGui")
+        hlGui.Name = "InspectorHL"
+        hlGui.ResetOnSpawn = false
+        hlGui.DisplayOrder = 1000
+        hlGui.IgnoreGuiInset = true
+        hlGui.Parent = playerGui
+
+        ov = makeHL()
+        ov.Visible = false
+        ov.Parent = hlGui
+
+        local function hasLayout(obj)
+            for _, c in ipairs(obj:GetChildren()) do
+                if c:IsA("UIGridStyleLayout") then return true end
+            end
+            return false
+        end
+
+        local function topInset()
+            local v = GuiService:GetGuiInset().Y
+            local ok2, r = pcall(function() return GuiService.TopbarInset.Height end)
+            if ok2 and r and r > v then v = r end
+            return v
+        end
+
+        local function updatePreview()
+            if hl then pcall(function() hl:Destroy() end) hl = nil end
+            ov.Visible = false
+
+            local obj = stack[index]
+            if not previewOn or not obj or not obj:IsA("GuiObject") then return end
+
+            if not hasLayout(obj) then
+                hl = makeHL()
+                hl.Size = UDim2.new(1, 0, 1, 0)
+                hl.Parent = obj
+            else
+                local sg = obj:FindFirstAncestorWhichIsA("ScreenGui")
+                local off = (sg and not sg.IgnoreGuiInset) and topInset() or 0
+                local p, s = obj.AbsolutePosition, obj.AbsoluteSize
+                ov.Position = UDim2.fromOffset(p.X, p.Y + off)
+                ov.Size = UDim2.fromOffset(s.X, s.Y)
+                ov.Visible = true
+            end
+        end
+
+        local function show()
+            local obj = stack[index]
+            if not obj then return end
+            lastInfo = describe(obj, index, #stack)
+            label.Text = lastInfo
+            scroll.CanvasPosition = Vector2.new(0, 0)
+            updatePreview()
+            print("========== GUI INFO ==========\n" .. lastInfo)
+        end
+
+        track(copyBtn.Activated:Connect(function()
+            local clip = setclipboard or toclipboard
+            if lastInfo == "" then
+                copyBtn.Text = "Kosong"
+            elseif clip then
+                copyBtn.Text = pcall(clip, lastInfo) and "OK!" or "Gagal"
+            else
+                copyBtn.Text = "N/A"
+            end
+            task.delay(1.2, function()
+                if copyBtn.Parent then copyBtn.Text = "Salin" end
+            end)
+        end))
+
+        track(toggleBtn.Activated:Connect(function()
+            enabled = not enabled
+            toggleBtn.Text = enabled and "Inspect: ON" or "Inspect: OFF"
+        end))
+
+        track(nextBtn.Activated:Connect(function()
+            if #stack == 0 then return end
+            index = index % #stack + 1
+            show()
+        end))
+
+        track(prevBtn.Activated:Connect(function()
+            if #stack == 0 then return end
+            index = (index - 2) % #stack + 1
+            show()
+        end))
+
+        track(previewBtn.Activated:Connect(function()
+            previewOn = not previewOn
+            previewBtn.Text = previewOn and "Preview: ON" or "Preview: OFF"
+            updatePreview()
+        end))
+
+        track(UIS.InputBegan:Connect(function(input)
+            if not enabled then return end
+            local t = input.UserInputType
+            if t ~= Enum.UserInputType.Touch and t ~= Enum.UserInputType.MouseButton1 then return end
+            if insidePanel(input.Position) then return end
+
+            local hits = playerGui:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y)
+            local filtered = {}
+            for _, o in ipairs(hits) do
+                if not o:IsDescendantOf(gui) and o.Name ~= "InspectorHighlight" then
+                    table.insert(filtered, o)
+                end
+            end
+
+            if #filtered == 0 then
+                label.Text = "Tidak ada GUI di titik tap ("
+                    .. math.floor(input.Position.X) .. ", " .. math.floor(input.Position.Y) .. ")"
+                return
+            end
+
+            stack, index = filtered, 1
+            show()
+        end))
+    end)
+
+    if not ok then
+        warn("[Inspector] Error: " .. tostring(err))
+        cleanupInspector()
+        return
+    end
+
+    activeInspector = { gui = gui, cleanup = cleanupInspector }
+end
 local ESPPage      = CreateTab("ESP", "👁")
 local ScanPage     = CreateTab("Scan", "🔍")
 local TapPage      = CreateTab("Tap", "👆")
@@ -785,7 +999,6 @@ Pages["ESP"].Visible = true
 TabButtons["ESP"].BackgroundColor3 = Colors.TabActive
 TabButtons["ESP"].TextColor3 = Colors.Text
 
--- ESP Page
 local FilterSection = CreateSection(ESPPage, "FILTER")
 FilterSection.LayoutOrder = nextOrder()
 CreateToggle(FilterSection, "Pemain", filters.Pemain, COLORS.Pemain,
@@ -807,7 +1020,6 @@ CreateToggle(LabelSection, "Tampilkan koordinat saya", coordOn, Colors.Accent,
         CoordFrame.Visible = v
     end)
 
--- Scan Page
 local ScanControls = CreateSection(ScanPage, "KONTROL")
 ScanControls.LayoutOrder = nextOrder()
 CreateSlider(ScanControls, "Radius", 10, 500, radius,
@@ -829,7 +1041,6 @@ CreateButtonRow(ScanLogSection,
         ScanLogLbl.Text = ""
     end })
 
--- Tap Page
 local TapControls = CreateSection(TapPage, "KONTROL")
 TapControls.LayoutOrder = nextOrder()
 CreateToggle(TapControls, "Aktifkan Mode Tap", tapOn, Colors.Accent,
@@ -849,59 +1060,54 @@ CreateButtonRow(TapLogSection,
         TapLogLbl.Text = ""
     end })
 
--- GUI Page (BARU)
-local GuiControls = CreateSection(GuiPage, "KONTROL")
-GuiControls.LayoutOrder = nextOrder()
-CreateToggle(GuiControls, "Aktifkan GUI Inspector", guiOn, Colors.Accent,
-    function(v)
-        guiOn = v
-        if not v then
-            Highlight.Visible = false
-        elseif #guiStack > 0 then
-            updateHighlight(guiStack[guiIdx])
-        end
+local GuiLauncher = CreateSection(GuiPage, "GUI INSPECTOR")
+GuiLauncher.LayoutOrder = nextOrder()
+
+local GuiInfoLbl = Instance.new("TextLabel")
+GuiInfoLbl.Size = UDim2.new(1, 0, 0, 60)
+GuiInfoLbl.BackgroundTransparency = 1
+GuiInfoLbl.Text = "Buka panel GUI Inspector (terpisah).\n"
+    .. "Panel bisa di-drag, di-minimize, dan di-close sendiri.\n"
+    .. "Tap elemen GUI di layar untuk melihat info lengkapnya."
+GuiInfoLbl.TextColor3 = Colors.TextDim
+GuiInfoLbl.Font = Enum.Font.Gotham
+GuiInfoLbl.TextSize = 12
+GuiInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
+GuiInfoLbl.TextYAlignment = Enum.TextYAlignment.Top
+GuiInfoLbl.TextWrapped = true
+GuiInfoLbl.LayoutOrder = nextOrder()
+GuiInfoLbl.Parent = GuiLauncher
+
+local openInspectorBtn
+openInspectorBtn = CreateButton(GuiLauncher, "🖼  Buka GUI Inspector", Colors.Accent,
+    function()
+        openGUIInspector()
+        MainFrame.Visible = false
     end)
 
-GuiIdxLbl = Instance.new("TextLabel")
-GuiIdxLbl.Size = UDim2.new(1, 0, 0, 20)
-GuiIdxLbl.BackgroundTransparency = 1
-GuiIdxLbl.Text = "Belum ada objek dipilih"
-GuiIdxLbl.TextColor3 = Colors.TextDim
-GuiIdxLbl.Font = Enum.Font.Gotham
-GuiIdxLbl.TextSize = 12
-GuiIdxLbl.TextXAlignment = Enum.TextXAlignment.Left
-GuiIdxLbl.LayoutOrder = nextOrder()
-GuiIdxLbl.Parent = GuiControls
-
-CreateButtonRow(GuiControls,
-    { text = "◀ Prev", color = Colors.Accent, callback = function() showGui(guiIdx - 1) end },
-    { text = "Next ▶", color = Colors.Accent, callback = function() showGui(guiIdx + 1) end })
-
-local GuiLogSection = CreateSection(GuiPage, "INFO GUI")
-GuiLogSection.LayoutOrder = nextOrder()
-local _guiBox
-_guiBox, GuiLogLbl = CreateLogBox(GuiLogSection, 280)
-GuiLogLbl.Text = "Aktifkan GUI Inspector, tutup jendela ini, lalu tap elemen GUI di layar. Buka ≡ lagi untuk membaca infonya."
-CreateButtonRow(GuiLogSection,
-    { text = "📋 Copy", color = Colors.Success, callback = function(btn)
-        copyText(guiLog, btn)
+CreateButtonRow(GuiLauncher,
+    { text = "↻ Buka Ulang", color = Colors.Success, callback = function()
+        openGUIInspector()
+        MainFrame.Visible = false
     end },
-    { text = "🗑 Clear", color = Colors.Danger, callback = function()
-        guiLog = ""
-        guiStack = {}
-        guiIdx = 0
-        GuiLogLbl.Text = ""
-        GuiIdxLbl.Text = "Belum ada objek dipilih"
-        Highlight.Visible = false
+    { text = "✕ Tutup Panel", color = Colors.Danger, callback = function()
+        if activeInspector then
+            pcall(activeInspector.cleanup)
+            activeInspector = nil
+        end
     end })
 
--- Settings
 local InfoSection = CreateSection(SettingsPage, "INFO")
 InfoSection.LayoutOrder = nextOrder()
 local InfoLbl = Instance.new("TextLabel")
 InfoLbl.Size = UDim2.new(1, 0, 0, 100)
 InfoLbl.BackgroundTransparency = 1
-InfoLbl.Text = "NameCheck — Baex Style\n\n• ESP: filter, label & koordinat\n• Scan: radius + scan + log\n• Tap: mode tap + log lengkap\n• GUI: inspector elemen GUI + highlight\n• Settings: cleanup"
+InfoLbl.Text = "NameCheck — Baex Style\n\n"
+    .. "• ESP: filter, label & koordinat\n"
+    .. "• Scan: radius + scan + log\n"
+    .. "• Tap: mode tap + log lengkap\n"
+    .. "• GUI: peluncur GUI Inspector (panel terpisah)\n"
+    .. "• Settings: cleanup"
 InfoLbl.TextColor3 = Colors.TextDim
 InfoLbl.Font = Enum.Font.Gotham
 InfoLbl.TextSize = 12
@@ -915,10 +1121,6 @@ local ActionSection = CreateSection(SettingsPage, "AKSI")
 ActionSection.LayoutOrder = nextOrder()
 CreateButton(ActionSection, "🗑 Destroy UI", Colors.Danger,
     function() if env.__NAMECHECK_CLEANUP then env.__NAMECHECK_CLEANUP() end end)
-
--- =====================================================
--- FUNGSI CORE
--- =====================================================
 
 refreshLabels = function(found)
     if not labelsOn or not found then
@@ -986,7 +1188,6 @@ runScan = function()
     refreshLabels(found)
 end
 
--- Tap helpers
 local function safeCall(fn, ...)
     local ok, res = pcall(fn, ...)
     if ok then return res end
@@ -1100,13 +1301,8 @@ buildTapReport = function(part)
     return table.concat(lines, "\n")
 end
 
--- =====================================================
--- INPUT TAP (dunia 3D)
--- =====================================================
--- Catatan: kalau GUI Inspector aktif, mode Tap dunia diabaikan
--- supaya satu sentuhan tidak memicu dua laporan sekaligus.
 connect(UIS.InputBegan, function(input, gp)
-    if not tapOn or gp or guiOn then return end
+    if not tapOn or gp then return end
     if input.UserInputType ~= Enum.UserInputType.Touch
         and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
         return
@@ -1115,7 +1311,6 @@ connect(UIS.InputBegan, function(input, gp)
     local t
     local cam = Workspace.CurrentCamera
     if cam then
-        -- input.Position sudah dikoreksi inset GUI -> pakai ScreenPointToRay
         local ray = cam:ScreenPointToRay(input.Position.X, input.Position.Y)
         local params = RaycastParams.new()
         pcall(function() params.FilterType = Enum.RaycastFilterType.Exclude end)
@@ -1136,43 +1331,6 @@ connect(UIS.InputBegan, function(input, gp)
     MainFrame.Visible = true
 end)
 
--- =====================================================
--- INPUT TAP (GUI)
--- =====================================================
--- Tidak memakai filter gp: tombol/menu milik game justru yang mau diperiksa.
-connect(UIS.InputBegan, function(input)
-    if not guiOn then return end
-    if input.UserInputType ~= Enum.UserInputType.Touch
-        and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-        return
-    end
-    local x, y = input.Position.X, input.Position.Y
-    if inOwnUI(x, y) then return end
-
-    local pg = LP:FindFirstChildOfClass("PlayerGui")
-    if not pg then return end
-    local ok, objs = pcall(function() return pg:GetGuiObjectsAtPosition(x, y) end)
-    if not ok or type(objs) ~= "table" then return end
-
-    -- buang elemen milik NameCheck sendiri (kalau UI-nya ada di PlayerGui)
-    local list = {}
-    for _, o in ipairs(objs) do
-        if not o:IsDescendantOf(ScreenGui) then table.insert(list, o) end
-    end
-
-    if #list == 0 then
-        guiStack, guiIdx = {}, 0
-        guiLog = "Tap: tidak ada elemen GUI di titik itu."
-        GuiLogLbl.Text = guiLog
-        GuiIdxLbl.Text = "Belum ada objek dipilih"
-        Highlight.Visible = false
-        return
-    end
-    guiStack = list
-    showGui(1)
-end)
-
--- Label auto-update (dibungkus pcall supaya error tidak mematikan loop)
 task.spawn(function()
     while running do
         task.wait(0.7)
@@ -1182,7 +1340,6 @@ task.spawn(function()
     end
 end)
 
--- Cleanup
 env.__NAMECHECK_CLEANUP = function()
     running = false
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
@@ -1190,12 +1347,12 @@ env.__NAMECHECK_CLEANUP = function()
         pcall(function() e.bb:Destroy() end)
         labelMap[m] = nil
     end
+    if activeInspector then
+        pcall(activeInspector.cleanup)
+        activeInspector = nil
+    end
     if ScreenGui then ScreenGui:Destroy() end
     env.__NAMECHECK_CLEANUP = nil
 end
 
 print("[NameCheck-Baex] siap. Tombol ≡ di kiri layar.")
-
--- ========================================================
--- END OF FILE
--- ========================================================
