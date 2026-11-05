@@ -1,6 +1,6 @@
 -- ========================================================
--- NAMECHECK — VENYX STYLE (fixed) + KOORDINAT
--- Desc  : ESP / Name Check / Tap Inspector dengan UI Venyx
+-- NAMECHECK — BAEX STYLE (fixed) + KOORDINAT
+-- Desc  : ESP / Name Check / Tap Inspector dengan UI Baex
 -- Tambahan: toggle koordinat floating (tab ESP)
 -- ========================================================
 
